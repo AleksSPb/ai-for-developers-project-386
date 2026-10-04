@@ -25,6 +25,29 @@ cd ai-for-developers-project-386
 
 <!-- Добавьте примеры запуска и запись asciinema — именно это смотрит работодатель -->
 
+Приложение лежит в каталоге `vite-project`:
+
+```bash
+cd vite-project
+npm install
+npm run dev
+```
+
+## Разработка
+
+Команды выполняются из каталога `vite-project`:
+
+```bash
+npm run dev       # dev-сервер
+npm run test      # тесты
+npm run lint      # eslint
+npm run build     # сборка и проверка типов
+```
+
+Сообщения коммитов оформляются по Conventional Commits, правила и список
+типов описаны в [docs/conventional-commits.md](docs/conventional-commits.md).
+Формат проверяет commitlint на этапе коммита.
+
 ---
 
 <details>
