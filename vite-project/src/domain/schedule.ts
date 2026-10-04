@@ -146,6 +146,22 @@ export const getAvailableSlots = (
 ): Slot[] =>
   getDaySlots(date).filter((slot) => getSlotStatus(slot, bookings, now) === 'свободен')
 
+/** Бронь — это тот же Слот, только уже занятый: пара «день и интервал». */
+export const getBookingSlot = (booking: Booking): Slot => ({
+  date: booking.date,
+  startMinutes: booking.startMinutes,
+  endMinutes: booking.endMinutes,
+})
+
+export const getBookingStart = (booking: Booking): Date => getSlotStart(getBookingSlot(booking))
+
+/**
+ * Предстоящая ли Бронь. Граница — начало Слота, а не конец: звонок, который
+ * уже идёт, не должен висеть в списке предстоящих.
+ */
+export const isBookingUpcoming = (booking: Booking, now: Date): boolean =>
+  getBookingStart(booking).getTime() > now.getTime()
+
 export const getAvailableSlotCount = (
   date: DateKey,
   bookings: readonly Booking[],

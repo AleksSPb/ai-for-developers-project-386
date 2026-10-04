@@ -1,4 +1,4 @@
-import { slotDurationMinutes } from '../domain/config'
+import { organizerTimeZone, slotDurationMinutes } from '../domain/config'
 import { parseDateKey, type DateKey, type MonthKey, type Slot } from '../domain/schedule'
 
 /**
@@ -41,6 +41,15 @@ const monthTitle = new Intl.DateTimeFormat('ru-RU', {
 })
 
 const pad = (value: number): string => String(value).padStart(2, '0')
+
+const createdAt = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: organizerTimeZone,
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
+
+/** Когда создана Бронь, в Таймзоне организатора: «27.03.2026, 14:40». */
+export const formatCreatedAt = (iso: string): string => createdAt.format(new Date(iso))
 
 export const weekdayHeaders = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] as const
 

@@ -14,6 +14,9 @@ import {
   getSlotStart,
   getSlotStatus,
   getToday,
+  getBookingSlot,
+  getBookingStart,
+  isBookingUpcoming,
   isDateSelectable,
   isMonthSelectable,
   shiftMonth,
@@ -81,7 +84,7 @@ describe('getSlotStatus', () => {
     expect(getSlotStatus(tenOClock, [bookingOn(TODAY, 600)], NOW)).toBe('занят')
   })
 
-  it('Сл��т занят даже при частичном пересечении', () => {
+  it('Слот занят даже при частичном пересечении', () => {
     const slot = getDaySlots(TODAY)[2]
     const overlapping = bookingOn(TODAY, 615)
     expect(getSlotStatus(slot, [overlapping], NOW)).toBe('занят')
@@ -198,6 +201,40 @@ describe('getDefaultDate', () => {
       getDaySlots(addDays(TODAY, offset)).map((slot) => bookingOn(addDays(TODAY, offset), slot.startMinutes)),
     ).flat()
     expect(getDefaultDate(everywhere, NOW)).toBe(TODAY)
+  })
+})
+
+describe('Брони во времени', () => {
+  const atTen = bookingOn(TODAY, 600)
+
+  it('Слот Брони совпадает с записанным интервалом', () => {
+    expect(getBookingSlot(atTen)).toEqual({
+      date: TODAY,
+      startMinutes: 600,
+      endMinutes: 630,
+    })
+  })
+
+  it('начало Брони — момент из таймзоны организатора', () => {
+    expect(getBookingStart(atTen).toISOString()).toBe('2026-03-28T07:00:00.000Z')
+  })
+
+  it('Бронь, начинающаяся позже, считается предстоящей', () => {
+    expect(isBookingUpcoming(atTen, NOW)).toBe(true)
+  })
+
+  it('идущий звонок не висит в предстоящих', () => {
+    // Граница — начало Слота, а не его конец.
+    expect(isBookingUpcoming(atTen, new Date('2026-03-28T07:00:00.000Z'))).toBe(false)
+  })
+
+  it('прошедшая Бронь не предстоящая', () => {
+    expect(isBookingUpcoming(atTen, new Date('2026-03-28T08:00:00.000Z'))).toBe(false)
+  })
+
+  it('Бронь в другой день не влияет на классификацию', () => {
+    const tomorrow = bookingOn('2026-03-29', 540)
+    expect(isBookingUpcoming(tomorrow, NOW)).toBe(true)
   })
 })
 

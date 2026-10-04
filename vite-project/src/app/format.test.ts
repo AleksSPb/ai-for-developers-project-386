@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { getDaySlots } from '../domain/schedule'
 import {
+  formatCreatedAt,
   formatDayTitle,
   formatDayWithYear,
   formatMinutes,
@@ -58,5 +59,11 @@ describe('форматирование времени', () => {
   it('подписывает число свободных Слотов', () => {
     expect(formatSlotCount(17)).toBe('17 св.')
     expect(formatSlotCount(0)).toBe('0 св.')
+  })
+})
+
+describe('дата создания Брони', () => {
+  it('показывает время в Таймзоне организатора, а не в UTC', () => {
+    expect(formatCreatedAt('2026-03-27T11:40:00.000Z')).toBe('27.03.2026, 14:40')
   })
 })
