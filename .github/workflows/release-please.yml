@@ -1,0 +1,29 @@
+name: release-please
+
+# Запускается вручную, когда есть желание зарелизить: Actions → release-please → Run workflow.
+# Корневого package.json нет намеренно — версия живёт в vite-project/package.json.
+#
+# Один релиз — два ручных прогона:
+#   1. запуск → создаёт/обновляет release-PR;
+#   2. после мержа release-PR → запуск снова → createPullRequests() прерывается
+#      («untagged, merged release PRs outstanding»), а createReleases() находит
+#      смерженный PR с меткой autorelease: pending и ставит тег + GitHub Release.
+# Автотриггера на push в main нет, поэтому без второго запуска тег не появится.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # release-type не указан: при наличии release-please-config.json
+      # включается манифестный режим автоматически
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
