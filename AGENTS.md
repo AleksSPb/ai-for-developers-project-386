@@ -55,3 +55,17 @@ npm run lint:commit # commitlint по коммитам origin/main..HEAD
 ## Состояние проекта
 
 Учебный проект Хекслета: сервис бронирования календаря звонков (ссылка на спецификацию — в корневом `README.md`). `src/App.tsx` пока демо-шаблон Mantine, настоящие функции ещё не начаты.
+
+## Agent skills
+
+### Трекер задач
+
+Задачи и спецификации ведутся в GitHub Issues этого репозитория, все операции — через CLI `gh`. См. `docs/agents/issue-tracker.md`.
+
+### Метки triage
+
+Дефолтный словарь из пяти канонических ролей: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. См. `docs/agents/triage-labels.md`.
+
+### Доменные доки
+
+Раскладка single-context: `GLOSSARY.md` и `docs/adr/` в корне репозитория. См. `docs/agents/domain.md`.
