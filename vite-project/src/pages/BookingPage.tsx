@@ -1,4 +1,4 @@
-import { Button, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Card, Group, Stack, Title } from '@mantine/core'
 import { useState } from 'react'
 
 import { useApp } from '../app/useApp'
@@ -10,16 +10,20 @@ import {
   type MonthKey,
   type Slot,
 } from '../domain/schedule'
+import BookingConfirm from '../components/BookingConfirm'
+import BookingSuccess from '../components/BookingSuccess'
 import CalendarGrid from '../components/CalendarGrid'
 import InfoPanel from '../components/InfoPanel'
 import SlotList from '../components/SlotList'
+
+type Step = 'choose' | 'confirm' | 'done'
 
 const BookingPage = () => {
   const { bookings, now } = useApp()
   const [selectedDate, setSelectedDate] = useState<DateKey>(() => getDefaultDate(bookings, now))
   const [month, setMonth] = useState<MonthKey>(() => getMonthKey(getDefaultDate(bookings, now)))
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
-  const [isConfirming, setIsConfirming] = useState(false)
+  const [step, setStep] = useState<Step>('choose')
 
   const availableCount = getAvailableSlotCount(selectedDate, bookings, now)
 
@@ -29,29 +33,9 @@ const BookingPage = () => {
     setSelectedSlot(null)
   }
 
-  if (isConfirming && selectedSlot !== null) {
-    return (
-      <Stack gap="lg">
-        <Title order={1}>Запись на звонок</Title>
-        <Group align="flex-start" gap="lg" wrap="wrap">
-          <Card withBorder padding="lg" radius="md">
-            <InfoPanel date={selectedDate} slot={selectedSlot} availableCount={availableCount} />
-          </Card>
-          <Card withBorder padding="lg" radius="md" style={{ flex: 1, minWidth: 280 }}>
-            <Group justify="space-between">
-              <Text fw={600}>Подтверждение записи</Text>
-              <Button variant="default" size="xs" onClick={() => setIsConfirming(false)}>
-                Изменить
-              </Button>
-            </Group>
-            {/* Поля Гостя и сохранение — следующий шаг. */}
-            <Button mt="lg" disabled>
-              Подтвердить запись
-            </Button>
-          </Card>
-        </Group>
-      </Stack>
-    )
+  const startOver = () => {
+    setSelectedSlot(null)
+    setStep('choose')
   }
 
   return (
@@ -62,27 +46,47 @@ const BookingPage = () => {
           <InfoPanel date={selectedDate} slot={selectedSlot} availableCount={availableCount} />
         </Card>
 
-        <Card withBorder padding="lg" radius="md" style={{ flex: 1, minWidth: 320 }}>
-          <CalendarGrid
-            month={month}
-            onMonthChange={setMonth}
-            selectedDate={selectedDate}
-            onSelectDate={selectDate}
-            bookings={bookings}
-            now={now}
-          />
-        </Card>
-
-        <Card withBorder padding="lg" radius="md" style={{ width: 340, flex: '0 0 auto' }}>
-          <SlotList
+        {step === 'confirm' && selectedSlot !== null ? (
+          <BookingConfirm
             date={selectedDate}
-            bookings={bookings}
-            now={now}
-            selectedSlot={selectedSlot}
-            onSelect={setSelectedSlot}
-            onContinue={() => setIsConfirming(true)}
+            slot={selectedSlot}
+            onEdit={startOver}
+            onDone={() => setStep('done')}
           />
-        </Card>
+        ) : (
+          <>
+            {step === 'done' ? (
+              <BookingSuccess onAgain={startOver} />
+            ) : (
+              <Card
+                withBorder
+                padding="lg"
+                radius="md"
+                style={{ flex: 1, minWidth: 320 }}
+              >
+                <CalendarGrid
+                  month={month}
+                  onMonthChange={setMonth}
+                  selectedDate={selectedDate}
+                  onSelectDate={selectDate}
+                  bookings={bookings}
+                  now={now}
+                />
+              </Card>
+            )}
+
+            <Card withBorder padding="lg" radius="md" style={{ width: 340, flex: '0 0 auto' }}>
+              <SlotList
+                date={selectedDate}
+                bookings={bookings}
+                now={now}
+                selectedSlot={selectedSlot}
+                onSelect={setSelectedSlot}
+                onContinue={() => setStep('confirm')}
+              />
+            </Card>
+          </>
+        )}
       </Group>
     </Stack>
   )
