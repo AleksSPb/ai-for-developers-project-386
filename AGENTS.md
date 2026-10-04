@@ -40,6 +40,10 @@ npm run lint:commit # commitlint по коммитам origin/main..HEAD
 - Ограничения: 11 допустимых типов (`feat`, `fix`, `chore`, …), заголовок не длиннее 100 символов вместе с префиксом, описание с маленькой буквы, без точки в конце. Тип и scope — латиницей, **описание — по-русски, в отглагольной форме** («добавить», не «добавил»).
 - Область: `vite-project` (например, `feat(vite-project): …`) — весь код лежит в этой папке.
 
+## Ветки
+
+Именование веток — по соглашению в `docs/branch-naming.md`: префикс (`feat`, `fix`, `docs`) и описание в `kebab-case` латиницей.
+
 ## Релизы
 
 - Релизы ведёт release-please отдельным workflow (`.github/workflows/release-please.yml`), **запускается вручную**: Actions → release-please → Run workflow. Автотриггера на push в `main` нет.
