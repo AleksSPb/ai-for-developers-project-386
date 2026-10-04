@@ -30,7 +30,8 @@ const pad = (value: number, length: number): string => String(value).padStart(le
 
 const dateKeyPattern = /^(\d{4})-(\d{2})-(\d{2})$/
 
-const parseDateKey = (date: DateKey): ZonedDateParts => {
+/** Разбор ключа дня. Экспортируется и интерфейсу: форматированию нужны те же части. */
+export const parseDateKey = (date: DateKey): ZonedDateParts => {
   const match = dateKeyPattern.exec(date)
   if (match === null) {
     throw new Error(`Некорректный ключ дня: ${date}`)
@@ -78,20 +79,29 @@ export const shiftMonth = (month: MonthKey, delta: number): MonthKey => {
 export const getToday = (now: Date): DateKey =>
   formatDateKey(getZonedDateTime(now, organizerTimeZone))
 
-const slotToDate = (slot: Slot, minutes: number): Date => {
-  const parts = parseDateKey(slot.date)
-  return zonedDateTimeToDate(
+/**
+ * Начало суток в Таймзоне организатора. Слоты отсчитываются от него минутами
+ * окна, поэтому каждому Слоту не нужно собственное преобразование времени:
+ * одна операция `Intl` на день вместо одной на Слот.
+ *
+ * Вычитается начало окна, потому что `startMinutes` — это минуты от
+ * полуночи, а момент здесь взят от начала окна.
+ */
+const getDayStartInstant = (date: DateKey): Date =>
+  zonedDateTimeToDate(
     {
-      ...parts,
-      hour: Math.floor(minutes / 60),
-      minute: minutes % 60,
+      ...parseDateKey(date),
+      hour: Math.floor(dayStartMinutes / 60),
+      minute: dayStartMinutes % 60,
     },
     organizerTimeZone,
   )
-}
 
-export const getSlotStart = (slot: Slot): Date => slotToDate(slot, slot.startMinutes)
-export const getSlotEnd = (slot: Slot): Date => slotToDate(slot, slot.endMinutes)
+const getSlotMoment = (slot: Slot, minutes: number): Date =>
+  new Date(getDayStartInstant(slot.date).getTime() + (minutes - dayStartMinutes) * 60_000)
+
+export const getSlotStart = (slot: Slot): Date => getSlotMoment(slot, slot.startMinutes)
+export const getSlotEnd = (slot: Slot): Date => getSlotMoment(slot, slot.endMinutes)
 
 /**
  * Все Слоты дня по Правилу расписания, без учёта занятости. Последний Слот
@@ -163,6 +173,27 @@ export const getMonthRange = (now: Date): { first: MonthKey; last: MonthKey } =>
 export const isMonthSelectable = (month: MonthKey, now: Date): boolean => {
   const range = getMonthRange(now)
   return month >= range.first && month <= range.last
+}
+
+const parseMonthKey = (month: MonthKey): { year: number; month: number } => {
+  const [year, number] = month.split('-')
+  return { year: Number(year), month: Number(number) }
+}
+
+/**
+ * Ячейки месячной сетки: сначала пустые места до первого числа, потом сами
+ * дни. Неделя начинается с понедельника, поэтому сдвиг считается от него, а
+ * не от воскресенья, как в `getUTCDay`.
+ */
+export const getMonthCells = (month: MonthKey): (DateKey | null)[] => {
+  const { year, month: monthNumber } = parseMonthKey(month)
+  const leading = (new Date(Date.UTC(year, monthNumber - 1, 1)).getUTCDay() + 6) % 7
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+  const cells: (DateKey | null)[] = Array.from({ length: leading }, () => null)
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(formatDateKey({ year, month: monthNumber, day }))
+  }
+  return cells
 }
 
 /**

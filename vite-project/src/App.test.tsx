@@ -3,7 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
+import { AppProvider } from './app/AppProvider'
+import type { BookingStorage } from './ports/storage'
 import App from './App'
+
+// Хранилище-заглушка: маршруты проверяются без браузерного состояния.
+const storage: BookingStorage = { read: () => [], write: () => {} }
 
 // Роутер подставляется тестом: в приложении его ставит main.tsx, а здесь
 // важно проверять страницы по адресу, не трогая историю браузера.
@@ -11,7 +16,9 @@ const renderAt = (path: string) =>
   render(
     <MantineProvider>
       <MemoryRouter initialEntries={[path]}>
-        <App />
+        <AppProvider storage={storage}>
+          <App />
+        </AppProvider>
       </MemoryRouter>
     </MantineProvider>,
   )
