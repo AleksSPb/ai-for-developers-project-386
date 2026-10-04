@@ -38,6 +38,14 @@ npm run lint:commit # commitlint по коммитам origin/main..HEAD
 - Ограничения: 11 допустимых типов (`feat`, `fix`, `chore`, …), заголовок не длиннее 100 символов вместе с префиксом, описание с маленькой буквы, без точки в конце. Тип и scope — латиницей, **описание — по-русски, в отглагольной форме** («добавить», не «добавил»).
 - Область: `vite-project` (например, `feat(vite-project): …`) — весь код лежит в этой папке.
 
+## Релизы
+
+- Релизы ведёт release-please отдельным workflow (`.github/workflows/release-please.yml`), **запускается вручную**: Actions → release-please → Run workflow. Автотриггера на push в `main` нет.
+- Один релиз — два прогона: первый создаёт release-PR, второй (после его мержа) ставит тег и GitHub Release.
+- Версия — `vite-project/package.json`, чанглог — `vite-project/CHANGELOG.md`, конфиги — `release-please-config.json` и `.release-please-manifest.json` в корне.
+- Теги и GitHub Releases ставит бот, руками их не создавать. Ключи `packages` в конфиге и в манифесте должны совпадать.
+- Кнопка Run workflow появляется только когда файл workflow лежит в ветке по умолчанию — до мержа в `main` запустить нечего.
+
 ## Состояние проекта
 
 Учебный проект Хекслета: сервис бронирования календаря звонков (ссылка на спецификацию — в корневом `README.md`). `src/App.tsx` пока демо-шаблон Mantine, настоящие функции ещё не начаты.
