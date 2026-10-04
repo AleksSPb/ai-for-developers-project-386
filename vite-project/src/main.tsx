@@ -4,6 +4,8 @@ import { createTheme, MantineProvider } from '@mantine/core'
 import { HashRouter } from 'react-router'
 import '@mantine/core/styles.css'
 import './index.css'
+import { AppProvider } from './app/AppProvider'
+import { createBookingStorage } from './ports/storage'
 import App from './App.tsx'
 
 const theme = createTheme({
@@ -18,7 +20,11 @@ createRoot(document.getElementById('root')!).render(
           статической раздаче без серверного fallback, а ссылку можно
           отправить Гостю в чат целиком. */}
       <HashRouter>
-        <App />
+        {/* Хранилище создаётся один раз: иначе каждое состояние компонента
+            читало бы его заново и получало пустые Брони. */}
+        <AppProvider storage={createBookingStorage()}>
+          <App />
+        </AppProvider>
       </HashRouter>
     </MantineProvider>
   </StrictMode>,
