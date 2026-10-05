@@ -1,23 +1,57 @@
 import { MantineProvider } from '@mantine/core'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import App from './App.tsx'
 
-describe('smoke test', () => {
-  it('renders the application', () => {
-    render(
-      <MantineProvider>
-        <App />
-      </MantineProvider>,
-    )
+import { AppProvider } from './app/AppProvider'
+import type { BookingStorage } from './ports/storage'
+import App from './App'
 
-    // Дерево смонтировалось и отрендерилось до конца, без краша
-    expect(
-      screen.getByRole('heading', { name: /mantine is connected/i }),
-    ).toBeTruthy()
+// Хранилище-заглушка: маршруты проверяются без браузерного состояния.
+const storage: BookingStorage = { read: () => [], write: () => {} }
 
-    // Mantine-компоненты замаунтились, useId связал label с input,
-    // и заглушек из setup.ts достаточно для их работы
-    expect(screen.getByLabelText(/your name/i)).toBeTruthy()
+// Роутер подставляется тестом: в приложении его ставит main.tsx, а здесь
+// важно проверять страницы по адресу, не трогая историю браузера.
+const renderAt = (path: string) =>
+  render(
+    <MantineProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <AppProvider storage={storage}>
+          <App />
+        </AppProvider>
+      </MemoryRouter>
+    </MantineProvider>,
+  )
+
+const bookingHeading = () => screen.getByRole('heading', { name: 'Запись на звонок', level: 1 })
+
+describe('маршруты', () => {
+  it('показывает страницу записи', () => {
+    renderAt('/book')
+    expect(bookingHeading()).toBeTruthy()
+  })
+
+  it('показывает список Броней', () => {
+    renderAt('/bookings')
+    expect(screen.getByRole('heading', { name: 'Брони', level: 1 })).toBeTruthy()
+  })
+
+  it('неизвестный адрес открывает страницу записи, а не пустую страницу', () => {
+    renderAt('/нет-такой-страницы')
+    expect(bookingHeading()).toBeTruthy()
+  })
+})
+
+describe('шапка', () => {
+  it('ведёт в оба раздела', () => {
+    renderAt('/book')
+    expect(screen.getByRole('link', { name: 'Записаться' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Брони' })).toBeTruthy()
+  })
+
+  it('переключает раздел по ссылке', () => {
+    renderAt('/book')
+    fireEvent.click(screen.getByRole('link', { name: 'Брони' }))
+    expect(screen.getByRole('heading', { name: 'Брони', level: 1 })).toBeTruthy()
   })
 })
