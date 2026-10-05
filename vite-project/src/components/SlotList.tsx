@@ -84,7 +84,8 @@ const SlotList = ({ date, bookings, now, selectedSlot, onSelect, onContinue }: S
       )}
 
       <Group>
-        {/* «Назад» появляется вместе с лендингом: до него идти некуда. */}
+        {/* Кнопки «Назад» нет: первый шаг — начало, и назад от него идти
+            некуда. Кнопка без действия хуже её отсутствия. */}
         <Button onClick={onContinue} disabled={selectedSlot === null}>
           Продолжить
         </Button>
