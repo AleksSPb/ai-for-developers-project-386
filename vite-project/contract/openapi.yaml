@@ -1,0 +1,377 @@
+openapi: 3.0.0
+info:
+  title: Календарь — запись на звонок
+  version: '2'
+  description: |-
+    Контракт сервиса бронирования звонков.
+
+    Источник правды — этот файл. Сгенерированный код воспроизводится из
+    `openapi.yaml` и не коммитится.
+
+    Что контракт НЕ описывает: расписание. Слоты считает клиент по рамке и
+    длительности Типа, которые приходят здесь. Контракт описывает форму данных,
+    а не логику их вычисления.
+tags:
+  - name: Типы Брони
+  - name: Расписание
+  - name: Брони
+paths:
+  /booking-types:
+    get:
+      operationId: BookingTypes_listBookingTypes
+      description: |-
+        Список Типов для выбора на странице записи.
+        Пустой список означает, что запись невозможна.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingTypeList'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Типы Брони
+  /bookings:
+    get:
+      operationId: Bookings_listBookings
+      description: |-
+        Все Брони, видимые Гостю.
+
+        Клиент читает список при загрузке и после каждой попытки записи —
+        успешной и нет. Без перечитывания клиентская проверка конфликта
+        сравнивает с устаревшим снимком и пропускает дубль.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Брони
+    post:
+      operationId: Bookings_createBooking
+      description: |-
+        Записать Гостя на Слот.
+
+        Идемпотентно по содержимому: если такая Бронь уже есть, возвращается
+        успех с ней. Иначе Гость, чья первая попытка прошла, а ответ потерялся,
+        увидел бы отказ при существующей Броне и решил бы, что записаться не удалось.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SlotNotFoundError'
+                  - $ref: '#/components/schemas/BookingTypeNotFoundError'
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotTakenError'
+        '422':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Брони
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+        description: Данные записи. Слот занимается целиком.
+  /schedule:
+    get:
+      operationId: Schedule_getSchedule
+      description: |-
+        Рамка расписания и длительность Слота для выбранного Типа.
+
+        Одна операция отдаёт всё нужное, чтобы построить сетку дня. Типы приходят
+        отдельной операцией, иначе пришлось бы ждать два ответа и гадать, какой
+        придёт первым.
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: Тип Брони, параметры которого нужны.
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleRule'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingTypeNotFoundError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Расписание
+components:
+  schemas:
+    Booking:
+      type: object
+      required:
+        - id
+        - type
+        - timeRange
+        - guestName
+        - guestEmail
+        - createdAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Идентификатор, присваивает сервер.
+        type:
+          type: string
+          minLength: 1
+          description: Тип Брони, как его назвал Гость при записи.
+        timeRange:
+          allOf:
+            - $ref: '#/components/schemas/TimeRange'
+          description: Занятый отрезок времени целиком.
+        guestName:
+          type: string
+          minLength: 1
+          description: Имя, которое Гость назвал сам.
+        guestEmail:
+          type: string
+          format: email
+          description: Почта, которую Гость назвал сам.
+        createdAt:
+          type: string
+          format: date-time
+          description: Когда создана Бронь, по часам сервера.
+      description: |-
+        Бронь — единственное, что хранится.
+
+        Тип и интервал лежат рядом, но это не одно и то же: интервал — единственное,
+        что обещано Гостю, а Тип — ярлык. Длительность Типа может быть изменена, и
+        существующие Брони ей не соответствуют, поэтому сверки нет нигде.
+    BookingTypeList:
+      type: object
+      required:
+        - types
+      properties:
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingTypeSummary'
+          description: Типы, доступные для записи. Пустой список — запись невозможна.
+      description: Список Типов, из которых Гость выбирает.
+    BookingTypeNotFoundError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - booking_type_not_found
+        message:
+          type: string
+      description: Типа Брони, который был в ссылке, на сервере больше нет.
+    BookingTypeSummary:
+      type: object
+      required:
+        - type
+        - name
+      properties:
+        type:
+          type: string
+          minLength: 1
+          description: Идентификатор Типа Брони, из которого строится адрес записи.
+        name:
+          type: string
+          minLength: 1
+          description: 'Название для показа Гостю: «Консультация».'
+      description: |-
+        Тип Брони в списке для выбора.
+
+        Идентификатор приходит с сервера, поэтому на клиенте это строка, а не
+        значение закрытого набора: валидация уходит в рантайм.
+    CreateBookingRequest:
+      type: object
+      required:
+        - type
+        - timeRange
+        - guestName
+        - guestEmail
+      properties:
+        type:
+          type: string
+          minLength: 1
+          description: Тип Брони, выбранный на странице выбора.
+        timeRange:
+          allOf:
+            - $ref: '#/components/schemas/TimeRange'
+          description: Выбранный Слот, который Гость занимает целиком.
+        guestName:
+          type: string
+          minLength: 1
+          description: Имя Гостя.
+        guestEmail:
+          type: string
+          format: email
+          description: Почта Гостя.
+      description: Запрос на запись. Идентификатор и время создания присваивает сервер.
+    ScheduleRule:
+      type: object
+      required:
+        - horizonDays
+        - backMonths
+        - organizerTimeZone
+        - durationMinutes
+      properties:
+        horizonDays:
+          type: integer
+          format: int32
+          minimum: 1
+          description: 'Горизонт записи: сколько дней вперёд от сегодня можно забронировать.'
+        backMonths:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Насколько далеко назад можно листать календарь, месяцев.
+        organizerTimeZone:
+          type: string
+          minLength: 1
+          description: Таймзона организатора. Приходит с сервера, а не берётся из браузера.
+        durationMinutes:
+          type: integer
+          format: int32
+          minimum: 5
+          description: Длительность Слота в минутах, определяется выбранным Типом.
+      description: |-
+        Правило расписания для выбранного Типа.
+
+        Рамка приходит с сервера, а превращение её в Слоты остаётся на клиенте.
+        Длительность определяется Типом, поэтому сетка делит окно нацело: Тип на
+        60 минут в окне 09:00–18:00 даёт 9 Слотов, а не 18.
+    ServiceUnavailableError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - service_unavailable
+        message:
+          type: string
+      description: Сервер не отвечает. Гость может повторить попытку.
+    SlotNotFoundError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - slot_not_found
+        message:
+          type: string
+      description: |-
+        Такого Слота нет: день вне Горизонта записи, либо Бронь сгорела,
+        а подтверждение пришло позже.
+    SlotTakenError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - slot_taken
+        message:
+          type: string
+      description: Слот занят другим Гостем. Возможен и при гонке — проигрывает второй.
+    TimeRange:
+      type: object
+      required:
+        - start
+        - end
+      properties:
+        start:
+          type: string
+          format: date-time
+          description: Начало, с точностью до секунд.
+        end:
+          type: string
+          format: date-time
+          description: Конец, с точностью до секунд. Всегда позже `start`.
+      description: |-
+        Отрезок времени в Брони или Слоте.
+
+        Это настоящие моменты, а не минуты от полуночи, поэтому такой отрезок
+        физически не может выглядеть как «начало позже конца»: момент окончания
+        всегда позже момента начала. Дата дня здесь выводится из начала в
+        Таймзоне организатора и отдельно не хранится.
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - validation_failed
+        message:
+          type: string
+        field:
+          type: string
+          description: 'Поле, в котором ошибка: «guestEmail».'
+      description: Проверка данных Гостя не прошла.
