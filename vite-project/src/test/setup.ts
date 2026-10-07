@@ -1,5 +1,10 @@
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import './server'
+
+// Тест контракта работает в node, а не в jsdom: он читает файл спецификации и
+// интерфейса не трогает. Пробки ниже нужны только когда окно есть.
+const hasWindow = typeof window !== 'undefined'
 
 // jsdom не реализует matchMedia, без него нечем эмулировать prefers-color-scheme
 const matchMediaStub = (query: string) =>
@@ -14,15 +19,19 @@ const matchMediaStub = (query: string) =>
     dispatchEvent: () => false,
   }) as unknown as MediaQueryList
 
-window.matchMedia = matchMediaStub
+if (hasWindow) {
+  window.matchMedia = matchMediaStub
 
-// jsdom не реализует ResizeObserver
-window.ResizeObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as unknown as typeof window.ResizeObserver
+  // jsdom не реализует ResizeObserver
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof window.ResizeObserver
+}
 
 afterEach(() => {
-  cleanup()
+  if (hasWindow) {
+    cleanup()
+  }
 })

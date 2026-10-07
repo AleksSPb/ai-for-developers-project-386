@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Сгенерированный клиент и service worker MSW не правятся руками, поэтому и не
+// проверяются линтером
+  globalIgnores(['dist', 'src/api/generated', 'public/mockServiceWorker.js']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
