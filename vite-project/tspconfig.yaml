@@ -1,0 +1,10 @@
+# Контракт описан в main.tsp. openapi.yaml коммитится — это и есть видимая
+# правда контракта. Сгенерированный из него код не коммитится (#23).
+emit:
+  - "@typespec/openapi3"
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{project-root}/contract"
+    openapi-versions:
+      - 3.0.0
+    file-type: yaml

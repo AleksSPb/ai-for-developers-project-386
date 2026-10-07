@@ -1,0 +1,632 @@
+openapi: 3.0.0
+info:
+  title: Календарь — запись на звонок
+  version: '3'
+  description: |-
+    Контракт сервиса бронирования звонков.
+
+    Источник правды — этот файл. Сгенерированный код воспроизводится из
+    `openapi.yaml` и не коммитится.
+
+    Что контракт НЕ описывает: расписание. Слоты считает клиент из окон
+    приёма и длительности Типа события, которые приходят здесь. Контракт
+    описывает форму данных, а не логику их вычисления.
+
+    Чего в контракте нет по умыслу: арифметики Слотов на сервере, сущности
+    «Событие» (существует только Тип события), маршрутов `/admin` и удаления
+    Типа события. Владельца как сущности тоже нет — см. docs/adr/0004.
+tags:
+  - name: Типы событий
+  - name: Расписание
+  - name: Брони
+paths:
+  /bookings:
+    get:
+      operationId: Bookings_listBookings
+      description: |-
+        Все Брони, видимые Гостю.
+
+        Имена и почты в ответе есть, а гостевая страница их не рисует: без
+        авторизации разница между «скрыто в интерфейсе» и «не отдаётся вовсе»
+        равна нулю — вызовут всё равно.
+
+        Клиент читает список при загрузке и после каждой попытки записи —
+        успешной и нет. Без перечитывания клиентская проверка конфликта
+        сравнивает с устаревшим снимком и пропускает дубль.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Брони
+    post:
+      operationId: Bookings_createBooking
+      description: |-
+        Записать Гостя на Слот.
+
+        Идемпотентно по содержимому: если такая Бронь уже есть, возвращается
+        успех с ней.
+
+        Перед вставкой проверяется ровно три вещи: начало не в прошлом,
+        длительность равна длительности Типа события, интервал целиком внутри
+        окна приёма. Горизонт записи не проверяется — окон в прошлом и за
+        горизонтом не существует.
+
+        Начало интервала **не привязано к сетке Слотов**: сервер не знает
+        правила «начало окна плюс кратное длительности». Поэтому интервал может
+        быть сдвинут относительно сетки, которую показывал клиент.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SlotNotFoundError'
+                  - $ref: '#/components/schemas/EventTypeNotFoundError'
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotTakenError'
+        '422':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/TimeNotBookableError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Брони
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+        description: Данные записи. Слот занимается целиком.
+  /event-types:
+    get:
+      operationId: EventTypes_listEventTypes
+      description: |-
+        Типы, доступные для записи, со счётчиком Бронь.
+
+        Одна операция отдаёт и список для гостевого выбора, и список для
+        Владельца: различаются они тем, что рисует клиент, а не тем, что
+        приезжает по сети.
+
+        Пустой список означает, что запись невозможна.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeList'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Типы событий
+    post:
+      operationId: EventTypes_createEventType
+      description: |-
+        Создать Тип события.
+
+        Владельца как сущности нет: операция открыта каждому, кто её вызовет.
+
+        **Идемпотентна по содержимому.** Если приходит запрос, совпадающий со
+        всем, что уже заведено, возвращается успех с этим Типом. Иначе Владелец,
+        чья первая попытка прошла, а ответ потерялся, увидел бы отказ при
+        существующем Типе и решил бы, что создать не удалось.
+
+        Ключ идемпотентности — набор всех полей, поэтому **любая правка Типа его
+        меняет сама собой**: повтор исходного запроса после переименования
+        вернёт `409`, потому что запрос больше не совпадает с тем, что лежит.
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeSummary'
+        '409':
+          description: The request conflicts with the current state of the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeExistsError'
+        '422':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Типы событий
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventTypeRequest'
+        description: Данные Типа события.
+  /event-types/{id}:
+    patch:
+      operationId: EventTypeById_updateEventType
+      description: |-
+        Переименовать Тип события: название и описание.
+
+        Идентификатор и длительность здесь не меняются. Длительность задаётся
+        один раз и больше не трогается — см. docs/adr/0005.
+
+        Удаления нет и не объявляется: Тип, созданный однажды, живёт всегда, а
+        существующие Брони не могут осиротеть.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор Типа события, неизменный после создания.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeSummary'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeNotFoundError'
+        '422':
+          description: Client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Типы событий
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEventTypeRequest'
+        description: Новое название и описание.
+  /windows:
+    get:
+      operationId: Availability_getWindows
+      description: |-
+        Окна приёма, по которым строится календарь.
+
+        Окна общие для Календаря и выражены моментами, а не суточным шаблоном:
+        дня без окна не бывает, а в одном дне окон может быть несколько.
+
+        **Начало живого окна округляется вверх до ближайшего целого часа** по
+        зоне начала окна, конец не трогается. Окно `10:00–20:00` при запросе в
+        `13:37` приходит как `14:00–20:00`. Если после обрезки окно короче
+        длительности Типа события, оно не возвращается вовсе.
+
+        Окно в прошлом — это окно, которое **целиком закончилось**. Окно, конец
+        которого в будущем, возвращается целиком, а прошедшие Слоты клиент
+        отсекает по правилу «Слот, который начался, не свободен».
+
+        Окно попадает в ответ **по дате начала**: окно с началом
+        30 июня и концом 2 июля приходит и в ответ за июнь, и в ответ за июль.
+
+        **Срок, на который сервер выдаёт окна вперёд, решает сервер.** Параметра
+        диапазона в запросе нет: правую границу календаря задаёт последнее окно
+        в ответе.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindowList'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Расписание
+components:
+  schemas:
+    AvailabilityWindowList:
+      type: object
+      required:
+        - windows
+      properties:
+        windows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeRange'
+          description: |-
+            Окна приёма, плоским списком и в порядке, который выдаёт сервер.
+
+            Окна общие для всего Календаря, а не отдельные у Типов событий.
+
+            Порядок устойчив: два запроса подряд дают один и тот же порядок, пока
+            данные не изменились. Иначе два Типа с одинаковым названием прыгали бы
+            по списку, и Гость не мог бы ни на что опереться.
+      description: Окно приёма, в котором Владелец принимает в этом Календаре.
+    Booking:
+      type: object
+      required:
+        - id
+        - eventTypeId
+        - timeRange
+        - guestName
+        - guestEmail
+        - createdAt
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Идентификатор, присваивает сервер.
+        eventTypeId:
+          type: string
+          minLength: 1
+          description: Идентификатор Типа события, под который Гость забронировал.
+        timeRange:
+          allOf:
+            - $ref: '#/components/schemas/TimeRange'
+          description: Занятый отрезок времени целиком.
+        guestName:
+          type: string
+          minLength: 1
+          description: Имя, которое Гость назвал сам.
+        guestEmail:
+          type: string
+          format: email
+          description: Почта, которую Гость назвал сам.
+        createdAt:
+          type: string
+          format: date-time
+          description: Когда создана Бронь, по часам сервера.
+      description: |-
+        Бронь — единственное, что хранится.
+
+        Идентификатор и время создания присваивает сервер, а Тип события приходит
+        от Гостя при записи. Длительность интервала сверяется с длительностью
+        Типа при создании, поэтому Бронь не может не соответствовать своему Типу.
+    CreateBookingRequest:
+      type: object
+      required:
+        - eventTypeId
+        - timeRange
+        - guestName
+        - guestEmail
+      properties:
+        eventTypeId:
+          type: string
+          minLength: 1
+          description: Тип события, выбранный на странице выбора.
+        timeRange:
+          allOf:
+            - $ref: '#/components/schemas/TimeRange'
+          description: Выбранный Слот, который Гость занимает целиком.
+        guestName:
+          type: string
+          minLength: 1
+          description: Имя Гостя.
+        guestEmail:
+          type: string
+          format: email
+          description: Почта Гостя.
+      description: Запрос на запись. Идентификатор и время создания присваивает сервер.
+    CreateEventTypeRequest:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - durationMinutes
+      properties:
+        id:
+          type: string
+          minLength: 1
+          pattern: ^[a-z0-9-]+$
+          description: |-
+            Идентификатор Типа события, из которого строится гостевой адрес записи.
+            Строчные латинские буквы, цифры и дефис.
+        name:
+          type: string
+          minLength: 1
+          description: Название Типа события.
+        description:
+          type: string
+          minLength: 1
+          description: Что это за событие.
+        durationMinutes:
+          type: integer
+          format: int32
+          minimum: 15
+          description: |-
+            Длительность Слота в минутах. Кратна 15 и не меньше 15.
+            Задаётся один раз и больше не меняется: см. docs/adr/0005.
+      description: Запрос на создание Типа события. Идентификатор задаёт Владелец.
+    EventTypeExistsError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - event_type_exists
+        message:
+          type: string
+      description: |-
+        Такой Тип события уже есть.
+
+        Отдельный код от `validation_failed`: «это значение уже занято» и «это
+        значение негодно» — разные причины.
+    EventTypeList:
+      type: object
+      required:
+        - types
+      properties:
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventTypeSummary'
+          description: Типы, доступные для записи. Пустой список — запись невозможна.
+      description: Список Типов событий, доступных для записи.
+    EventTypeNotFoundError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - event_type_not_found
+        message:
+          type: string
+      description: Типа события, который был в ссылке, на сервере больше нет.
+    EventTypeSummary:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - durationMinutes
+        - bookingCount
+      properties:
+        id:
+          type: string
+          minLength: 1
+          pattern: ^[a-z0-9-]+$
+          description: |-
+            Идентификатор Типа события, из которого строится адрес записи.
+            Строчные латинские буквы, цифры и дефис. Присваивает Владелец.
+        name:
+          type: string
+          minLength: 1
+          description: 'Название для показа: Владельцу в списке, Гостю на странице выбора.'
+        description:
+          type: string
+          minLength: 1
+          description: |-
+            Что это за событие, для показа Гостю под названием.
+
+            Названия не уникальны, поэтому описание — единственное, чем два Типа с
+            одинаковым названием различаются для Гостя. Поле обязательное.
+        durationMinutes:
+          type: integer
+          format: int32
+          minimum: 15
+          description: |-
+            Длительность Слота в минутах, определяется этим Типом.
+
+            Кратна 15 и не меньше 15. Верхней границы нет: она означала бы проверку
+            против Горизонта записи, а Горизонт сам выводится из опубликованных окон.
+            Тип длиннее окна допустим — такой день помечается как «нет слотов под ваш
+            тип».
+
+            Машиночитаемого ограничения кратности в OpenAPI 3.0 нет, поэтому здесь
+            оно записано текстом и проверяется сервером.
+        bookingCount:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |-
+            Сколько Бронь заведено на этот Тип, за всё время включая прошедшие.
+
+            Считает сервер: на странице Типов списка Броней нет, и считать не из чего.
+            Ответ на вопрос «а работает ли это»; «сколько впереди» — вопрос страницы
+            встреч.
+      description: |-
+        Тип события в списке для выбора и в списке Владельца.
+
+        Идентификатор приходит с сервера, поэтому на клиенте это строка, а не
+        значение закрытого набора: валидация уходит в рантайм.
+
+        Идентификатор пишет сам Владелец и он неизменен после создания, потому что
+        попадает прямо в гостевую ссылку.
+    ServiceUnavailableError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - service_unavailable
+        message:
+          type: string
+      description: Сервер не отвечает. Повтор инициирует сам Гость.
+    SlotNotFoundError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - slot_not_found
+        message:
+          type: string
+      description: |-
+        Такого Слота нет: день вне Горизонта записи, либо Бронь сгорела,
+        а подтверждение пришло позже.
+    SlotTakenError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - slot_taken
+        message:
+          type: string
+      description: Слот занят другим Гостем. Возможен и при гонке — проигрывает второй.
+    TimeNotBookableError:
+      type: object
+      required:
+        - code
+        - message
+        - field
+      properties:
+        code:
+          type: string
+          enum:
+            - time_not_bookable
+        message:
+          type: string
+        field:
+          type: string
+          minLength: 1
+          description: Поле, в котором ошибка. Всегда `timeRange`.
+      description: |-
+        Время, по которому записаться нельзя.
+
+        Гость не соревнуется с кем-то — он прислал время, которого нет. Это не
+        `slot_taken`: здесь про другое.
+    TimeRange:
+      type: object
+      required:
+        - start
+        - end
+      properties:
+        start:
+          type: string
+          format: date-time
+          description: Начало, с точностью до секунд.
+        end:
+          type: string
+          format: date-time
+          description: Конец, с точностью до секунд. Всегда позже `start`.
+      description: |-
+        Отрезок времени в Броне, Слоте или окне приёма.
+
+        Это настоящие моменты, а не минуты от полуночи, поэтому такой отрезок
+        физически не может выглядеть как «начало позже конца»: момент окончания
+        всегда позже момента начала. Дата дня отсюда выводится, а отдельно не
+        хранится.
+
+        Каждый момент несёт собственное смещение, поэтому переход на летнее время
+        не требует ничего, а ночное окно выразимо: окно приёма может перешагнуть
+        полночь.
+    UpdateEventTypeRequest:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Новое название Типа события.
+        description:
+          type: string
+          minLength: 1
+          description: Новое описание Типа события.
+      description: |-
+        Запрос на переименование Типа события.
+
+        Идентификатора здесь нет: он неизменен после создания, и менять его нельзя.
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+        - fields
+      properties:
+        code:
+          type: string
+          enum:
+            - validation_failed
+        message:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+          description: |-
+            Поля, в которых ошибка: `["id", "description"]`.
+
+            Их несколько, потому что форма должна подсветить всё сразу.
+      description: |-
+        Проверка данных не прошла.
+
+        Возвращает **все** негодные поля сразу, а не по одному, чтобы форма
+        подсвечивала всё негодное за один проход.
