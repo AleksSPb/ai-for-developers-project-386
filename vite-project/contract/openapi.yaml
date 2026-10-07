@@ -190,6 +190,51 @@ paths:
               $ref: '#/components/schemas/CreateEventTypeRequest'
         description: Данные Типа события.
   /event-types/{id}:
+    get:
+      operationId: EventTypeById_getEventType
+      description: |-
+        Прочитать один Тип события по идентификатору.
+
+        Отдаёт ровно ту же `EventTypeSummary`, что и список, и то же, что отдаёт
+        переименование: у Типа не должно быть двух представлений, иначе расхождение
+        обнаружилось бы поздно, на данных.
+
+        **Зовёт только гостевая страница записи**, у которой идентификатор Типа
+        известен из адреса, а списка у неё нет вовсе. Страница выбора Типов и
+        раздел Владельца берут всё из списка — ради одного названного Типа тянуть
+        весь список работа без пользы.
+
+        **`404` сообщает о факте, а не придумывает сообщение:** гость видит
+        страницу выбора Типов. Того же кода на `POST /bookings` это не отменяет:
+        там он означает, что Тип исчез между открытием страницы и подтверждением.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор Типа события, неизменный после создания.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeSummary'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventTypeNotFoundError'
+        '503':
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+      tags:
+        - Типы событий
     patch:
       operationId: EventTypeById_updateEventType
       description: |-
