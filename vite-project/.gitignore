@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Клиент генерируется из contract/openapi.yaml и воспроизводится npm run client
+src/api/generated
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

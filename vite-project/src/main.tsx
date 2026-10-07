@@ -6,6 +6,7 @@ import '@mantine/core/styles.css'
 import './index.css'
 import { AppProvider } from './app/AppProvider'
 import { createBookingStorage } from './ports/storage'
+import { usesStubs } from './api/config'
 import App from './App.tsx'
 
 const theme = createTheme({
@@ -13,19 +14,36 @@ const theme = createTheme({
   defaultRadius: 'md',
 })
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <MantineProvider theme={theme}>
-      {/* HashRouter, а не BrowserRouter: адрес вида /#/book работает на любой
-          статической раздаче без серверного fallback, а ссылку можно
-          отправить Гостю в чат целиком. */}
-      <HashRouter>
-        {/* Хранилище создаётся один раз: иначе каждое состояние компонента
-            читало бы его заново и получало пустые Брони. */}
-        <AppProvider storage={createBookingStorage()}>
-          <App />
-        </AppProvider>
-      </HashRouter>
-    </MantineProvider>
-  </StrictMode>,
-)
+/**
+ * Отрисовка ждёт готовности заглушки: иначе приложение успело бы спросить
+ * сервер раньше, чем заглушка на него ответит, и показало бы пустоту.
+ *
+ * Заглушка поднимается только когда адрес сервера не задан: с настоящим сервером
+ * она была бы ложью поверх его ответов. Воркер тянется динамическим импортом,
+ * чтобы в сборку с сервером он не попал вовсе.
+ */
+const start = async () => {
+  if (usesStubs) {
+    const { worker } = await import('./api/worker')
+    await worker.start({ onUnhandledRequest: 'error' })
+  }
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <MantineProvider theme={theme}>
+        {/* HashRouter, а не BrowserRouter: адрес вида /#/book работает на любой
+            статической раздаче без серверного fallback, а ссылку можно
+            отправить Гостю в чат целиком. */}
+        <HashRouter>
+          {/* Хранилище создаётся один раз: иначе каждое состояние компонента
+              читало бы его заново и получало пустые Брони. */}
+          <AppProvider storage={createBookingStorage()}>
+            <App />
+          </AppProvider>
+        </HashRouter>
+      </MantineProvider>
+    </StrictMode>,
+  )
+}
+
+void start()
