@@ -1,5 +1,5 @@
 import { MantineProvider } from '@mantine/core'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -405,9 +405,7 @@ describe('подтверждение записи', () => {
     expect(screen.getByLabelText('Имя')).toHaveProperty('value', '')
   })
 
-  it('показывает отказ сервера и не показывает экран успеха', async () => {
-    // Клиент больше не решает, занят Слот или нет: за конфликт отвечает сервер, и
-    // текст отказа его, а не придуманный на клиенте.
+  it('не показывает экран успеха, когда сервер отказал', async () => {
     server.use(
       http.post('/bookings', () =>
         HttpResponse.json({ code: 'slot_taken', message: 'Слот уже занят' }, { status: 409 }),
@@ -422,7 +420,131 @@ describe('подтверждение записи', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
 
-    expect(await screen.findByText('Слот уже занят')).toBeTruthy()
+    // Текст отказа принадлежит интерфейсу: `message` из контракта — строка для
+    // разработчика, и перед гостем она была бы просто чужой фразой.
+    expect(await screen.findByText('Это время уже занял другой гость — выберите другое')).toBeTruthy()
+    expect(screen.queryByText('Слот уже занят')).toBeNull()
     expect(screen.queryByText('Бронь подтверждена. До встречи!')).toBeNull()
+  })
+})
+
+/**
+ * Отказ по занятости: `409` от `POST /bookings`.
+ *
+ * Клиент больше не решает, занят Слот или нет, — за конфликт отвечает сервер. Но
+ * отказ приходит уже **после** того, как гость ввёл имя и почту, и терять их
+ * из-за чужой занятости незачем.
+ */
+describe('отказ по занятости', () => {
+  /**
+   * Слот 10:00, который сервер занимает между чтением списка и отправкой.
+   *
+   * Так ведёт себя гонка: список гость видел свободным, а к отправке Слот уже
+   * чужой. Именно её ловит `409`, и именно поэтому клиентской проверки нет.
+   */
+  const TAKEN_TEXT = 'Это время уже занял другой гость — выберите другое'
+
+  const withRaceOnSelectedSlot = () => {
+    const state = { gets: 0, posts: 0 }
+
+    server.use(
+      http.post('/bookings', () => {
+        state.posts += 1
+        return HttpResponse.json(
+          { code: 'slot_taken', message: 'Слот уже занят' },
+          { status: 409 },
+        )
+      }),
+      http.get('/bookings', () => {
+        state.gets += 1
+        // До повторного чтения Слот свободен, после — уже нет: так выглядит гонка.
+        return HttpResponse.json(
+          state.gets > 1 ? [toApiBooking(booking(`${TODAY}T07:00:00.000Z`))] : [],
+          { status: 200 },
+        )
+      }),
+    )
+
+    return state
+  }
+
+  /**
+   * Страница с гонкой на выбранном Слоте.
+   *
+   * Отдельный рендер, а не `renderPage`: тот подставляет свой список Броней, а
+   * `server.use` отдаёт предпочтение подставленному последним — и заглушка гонки
+   * осталась бы незамеченной.
+   */
+  const renderRace = () => {
+    const state = withRaceOnSelectedSlot()
+    render(storageWith())
+    return state
+  }
+
+  const reachConfirmation = async () => {
+    fireEvent.click(slotButton('10:00 – 11:00'))
+    fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
+    fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+    await screen.findByText(TAKEN_TEXT)
+  }
+
+  it('оставляет введённые имя и почту', async () => {
+    renderRace()
+    await awaitSources()
+    await reachConfirmation()
+
+    // Терять введённое — наказание за чужую занятость, а гость к ней не при чём.
+    expect(screen.getByLabelText('Имя')).toHaveProperty('value', 'Demo User')
+    expect(screen.getByLabelText('Email')).toHaveProperty('value', 'demo@example.com')
+  })
+
+  it('останавливает кнопку, чтобы гость не жал её по кругу', async () => {
+    const state = renderRace()
+    await awaitSources()
+    await reachConfirmation()
+
+    expect(screen.getByRole('button', { name: 'Подтвердить запись' })).toHaveProperty('disabled', true)
+
+    // И жмучая её, гость ничего не отправляет: повтор вернул бы тот же отказ и
+    // потерял бы введённое имя и почту второй раз.
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+    expect(state.posts).toBe(1)
+  })
+
+  it('перечитывает список Броней, а не оставляет снимок', async () => {
+    const state = renderRace()
+    await awaitSources()
+    await waitFor(() => expect(state.gets).toBe(1))
+    await reachConfirmation()
+
+    // Без перечитывания занятый Слот остался бы свободным, и интерфейс предлагал бы
+    // занять уже чужое время.
+    await waitFor(() => expect(state.gets).toBe(2))
+  })
+
+  it('гасит Слот, который гость выбрал', async () => {
+    renderRace()
+    await awaitSources()
+    await reachConfirmation()
+
+    // Слот ушёл другому гостю, и после перечитывания списка это видно без всякой
+    // клиентской проверки конфликта: гаснет сам.
+    expect(screen.queryByText('Статус слотов')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Подтвердить запись' })).toHaveProperty('disabled', true)
+  })
+
+  it('не запирает гостя: другой Слот всё ещё можно выбрать', async () => {
+    const state = renderRace()
+    await awaitSources()
+    await reachConfirmation()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
+
+    // Возврат к выбору дня работает, и свободный Слот доступен: отказ по занятости
+    // относится к одному Слоту, а не к записи гостя в целом.
+    expect(slotButton('11:00 – 12:00')).toHaveProperty('disabled', false)
+    expect(state.posts).toBe(1)
   })
 })

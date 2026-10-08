@@ -134,12 +134,12 @@ describe('провайдер поверх сервера', () => {
     const { submit } = renderWith()
     await ready()
 
-    let outcome: { ok: boolean } = { ok: false }
+    let outcome: { kind: string } = { kind: 'отказ' }
     await act(async () => {
       outcome = await submit()
     })
 
-    expect(outcome.ok).toBe(true)
+    expect(outcome.kind).toBe('создана')
     expect(await screen.findByText('броней: 1')).toBeTruthy()
   })
 
@@ -152,15 +152,34 @@ describe('провайдер поверх сервера', () => {
     const { submit } = renderWith()
     await screen.findByText('броней: 1')
 
-    let outcome: { ok: boolean; message?: string } = { ok: true }
+    let outcome: { kind: string; refusal?: { kind: string } } = { kind: 'создана' }
     await act(async () => {
       outcome = await submit()
     })
 
     expect(create.sent).toBe(1)
-    expect(outcome.ok).toBe(false)
-    // Текст отказа серверный: клиент не знает, чем именно занят Слот.
-    expect(outcome.message).toBe('Слот уже занят')
+    expect(outcome.kind).toBe('отказ')
+    expect(outcome.refusal?.kind).toBe('занят')
+  })
+
+  it('перечитывает список и после отказа', async () => {
+    // Список перечитывается после любой попытки: без этого после отказа по
+    // занятости Слот остался бы свободным в интерфейсе, и гость жал бы кнопку
+    // снова, получая тот же отказ.
+    const create = withCreateResponse(409, { code: 'slot_taken', message: 'Слот уже занят' })
+    const list = http.get('/bookings', () => HttpResponse.json([], { status: 200 }))
+    server.use(create.handler, list)
+
+    const { submit } = renderWith()
+    await ready()
+
+    await act(async () => {
+      await submit()
+    })
+
+    // Второе чтение — после отказа: снимок списка не должен остаться прежним.
+    expect(await screen.findByText('броней: 0')).toBeTruthy()
+    expect(create.sent).toBe(1)
   })
 
   it('пустые поля не отправляются на сервер', async () => {
@@ -170,14 +189,14 @@ describe('провайдер поверх сервера', () => {
     const { submit } = renderWith()
     await ready()
 
-    let outcome: { ok: boolean; message?: string } = { ok: true }
+    let outcome: { kind: string; refusal?: { kind: string } } = { kind: 'создана' }
     await act(async () => {
       outcome = await submit(slotAt(10), { name: ' ', email: 'demo' })
     })
 
     expect(create.sent).toBe(0)
-    expect(outcome.ok).toBe(false)
-    expect(outcome.message).toBe('Проверьте имя и почту')
+    expect(outcome.kind).toBe('отказ')
+    expect(outcome.refusal?.kind).toBe('данные')
   })
 
   it('отказ списка отличается от пустого списка', async () => {

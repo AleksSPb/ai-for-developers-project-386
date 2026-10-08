@@ -7,6 +7,7 @@ import { validateGuest } from '../domain/booking'
 import { formatSlotRange } from '../app/formatTime'
 import { formatDayTitle } from '../app/formatDate'
 import type { Slot } from '../domain/slots'
+import { canRetry, refusalText, type BookingRefusal } from '../app/bookingRefusal'
 
 interface BookingConfirmProps {
   date: string
@@ -24,6 +25,10 @@ interface BookingConfirmProps {
  *
  * Конфликт до отправки не проверяется: за него отвечает сервер один раз. Форма
  * проверяет только свои поля — пустое имя или почту сервер всё равно отвергнет.
+ *
+ * Отказ по занятости оставляет форму с введённым именем и почтой: терять их —
+ * наказание за чужую занятость. При этом кнопка подтверждения перестаёт работать,
+ * потому что Слот уже не свободен и повторная отправка вернула бы тот же отказ.
  */
 const BookingConfirm = ({
   date,
@@ -36,33 +41,34 @@ const BookingConfirm = ({
   const { addBooking } = useApp()
   const [guest, setGuest] = useState({ name: '', email: '' })
   const [isSubmitted, setIsSubmitted] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<BookingRefusal | null>(null)
   const [isSending, setIsSending] = useState(false)
 
   // Ошибки показываются только после попытки подтверждения, иначе пустая форма
   // выглядит как заведомо неправильная.
   const errors = isSubmitted ? validateGuest(guest) : {}
+  const retryable = refusal === null || canRetry(refusal)
 
   const submit = async () => {
     setIsSubmitted(true)
-    setError(null)
+    setRefusal(null)
 
     if (Object.keys(validateGuest(guest)).length > 0) {
       return
     }
 
     setIsSending(true)
-    const result = await addBooking(slot, eventTypeId, guest)
+    const outcome = await addBooking(slot, eventTypeId, guest)
     setIsSending(false)
 
-    if (result.ok) {
+    if (outcome.kind === 'создана') {
       onDone()
       return
     }
 
-    // Текст отказа — серверный: клиент не знает, чем именно занят Слот, и
-    // выдумывать причину значило бы врать.
-    setError(result.message ?? 'Не удалось записаться')
+    // Отказ сервера, а не текст из его тела: `message` из контракта — строка для
+    // разработчика, и перед гостем она была бы просто чужой фразой.
+    setRefusal(outcome.refusal)
   }
 
   return (
@@ -83,29 +89,23 @@ const BookingConfirm = ({
           label="Имя"
           value={guest.name}
           error={errors.name}
-          onChange={(event) => {
-            setGuest({ ...guest, name: event.currentTarget.value })
-            setError(null)
-          }}
+          onChange={(event) => setGuest({ ...guest, name: event.currentTarget.value })}
         />
         <TextInput
           label="Email"
           value={guest.email}
           error={errors.email}
-          onChange={(event) => {
-            setGuest({ ...guest, email: event.currentTarget.value })
-            setError(null)
-          }}
+          onChange={(event) => setGuest({ ...guest, email: event.currentTarget.value })}
         />
       </Stack>
 
-      {error !== null && (
+      {refusal !== null && (
         <Text c="red" size="sm" mt="sm">
-          {error}
+          {refusalText(refusal)}
         </Text>
       )}
 
-      <Button fullWidth mt="md" onClick={submit} loading={isSending}>
+      <Button fullWidth mt="md" onClick={submit} loading={isSending} disabled={!retryable}>
         Подтвердить запись
       </Button>
     </Card>

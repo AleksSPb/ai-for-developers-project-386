@@ -4,6 +4,7 @@ import { bookingsCreateBooking, bookingsListBookings } from '../api/generated/ca
 import { toDomainBookings } from '../api/bookings'
 import type { Booking } from '../domain/booking'
 import type { Slot } from '../domain/slots'
+import { parseCreateResponse, type CreateOutcome } from './bookingRefusal'
 
 /**
  * Брони на сервере.
@@ -18,12 +19,6 @@ export type BookingsState =
   | { kind: 'загрузка' }
   | { kind: 'готов'; value: readonly Booking[] }
   | { kind: 'отказ'; message: string }
-
-export interface CreateResult {
-  ok: boolean
-  /** Текст отказа сервера, если он был. */
-  message?: string
-}
 
 interface Loaded {
   /** Номер выгрузки: состояние показывается, только если оно свежее. */
@@ -77,11 +72,18 @@ export const useBookings = () => {
   /**
    * Создать Бронь.
    *
-   * После успеха список **перечитывается**, а не дополняется на клиенте: иначе в
-   * двух вкладках разошлись бы и список, и счётчики занятости.
+   * Список перечитывается после **любой** попытки — и успешной, и отказанной: он
+   * не дополняется на клиенте, потому что между чтением и отправкой Слот мог
+   * занять другой гость. Пока список не перечитан, интерфейс предлагал бы занять
+   * уже занятое время, а после отказа по занятости не гас бы тот самый Слот, за
+   * который гость только что получил отказ.
    */
   const create = useCallback(
-    async (slot: Slot, eventTypeId: string, guest: { name: string; email: string }): Promise<CreateResult> => {
+    async (
+      slot: Slot,
+      eventTypeId: string,
+      guest: { name: string; email: string },
+    ): Promise<CreateOutcome> => {
       const response = await bookingsCreateBooking({
         eventTypeId,
         timeRange: { start: slot.start.toISOString(), end: slot.end.toISOString() },
@@ -89,12 +91,11 @@ export const useBookings = () => {
         guestEmail: guest.email.trim().toLowerCase(),
       })
 
-      if (response.status === 201) {
-        reload()
-        return { ok: true }
-      }
+      const outcome = parseCreateResponse(response)
 
-      return { ok: false, message: response.data.message }
+      reload()
+
+      return outcome
     },
     [reload],
   )
