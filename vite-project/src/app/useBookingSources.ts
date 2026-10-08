@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { availabilityGetWindows, eventTypeByIdGetEventType } from '../api/generated/calendar-api'
 import type { TimeRange } from '../domain/range'
+import type { SourceState } from './source'
 
 /**
  * Источники страницы записи.
@@ -10,19 +11,25 @@ import type { TimeRange } from '../domain/range'
  * загрузки: календарь без Окон предложил бы выбрать день, где записаться
  * нельзя, и выглядел бы это как «у Владельца нет времени» — то есть как ложь
  * о сервере.
- *
- * Отдельные состояния, а не один флаг: «грузятся», «пришли» и «сервер отказал»
- * требуют разных слов на экране.
  */
 
-export type SourceState<T> =
+/**
+ * Тип события из адреса.
+ *
+ * `нет типа` — отдельное состояние, а не отказ. Отказ значит «данные неизвестны»,
+ * и про него гость должен узнать вместе с текстом сервера; а вот «Типа по адресу
+ * больше нет» — это факт о ссылке, и гостю полагается страница выбора, а не
+ * красная плашка.
+ */
+export type EventTypeSource =
   | { kind: 'загрузка' }
-  | { kind: 'готов'; value: T }
+  | { kind: 'готов'; value: { id: string; durationMinutes: number } }
+  | { kind: 'нет типа' }
   | { kind: 'отказ'; message: string }
 
 export interface BookingSources {
   windows: SourceState<TimeRange[]>
-  eventType: SourceState<{ id: string; durationMinutes: number }>
+  eventType: EventTypeSource
 }
 
 /** Что именно не пришло: имя источника показывается в тексте загрузки. */
@@ -59,9 +66,7 @@ const readWindows = async (): Promise<SourceState<TimeRange[]>> => {
   return { kind: 'отказ', message: response.data.message }
 }
 
-const readEventType = async (
-  id: string,
-): Promise<SourceState<{ id: string; durationMinutes: number }>> => {
+const readEventType = async (id: string): Promise<EventTypeSource> => {
   const response = await eventTypeByIdGetEventType(id)
 
   if (response.status === 200) {
@@ -69,6 +74,13 @@ const readEventType = async (
       kind: 'готов',
       value: { id: response.data.id, durationMinutes: response.data.durationMinutes },
     }
+  }
+
+  // 404 — это не поломка сервера, а факт: Типа по ссылке больше нет. Гость
+  // пришёл по старой ссылке из чата, и показывать ему красную плашку значило бы
+  // сказать, что сервер недоступен.
+  if (response.status === 404) {
+    return { kind: 'нет типа' }
   }
 
   return { kind: 'отказ', message: response.data.message }
