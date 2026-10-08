@@ -30,17 +30,66 @@ export type StubbedResponse = {
   body: unknown
 }
 
+/**
+ * Момент, от которого считаются зашитые интервалы.
+ *
+ * Один на модуль: заглушка перечитывается на каждой перезагрузке страницы, а внутри
+ * одной загрузки все интервалы должны быть согласованы между собой, иначе список
+ * Броней говорил бы о времени, которого заглушка окон не предлагает.
+ */
+const now = new Date()
+
+/** Интервал заданного дня: смещение в днях от «сейчас», час начала и длительность. */
+const range = (dayOffset: number, hour: number, durationMinutes: number) => {
+  const from = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + dayOffset,
+    hour,
+    0,
+    0,
+    0,
+  )
+
+  return { start: from.toISOString(), end: new Date(from.getTime() + durationMinutes * 60_000).toISOString() }
+}
+
 const stubBooking = {
   id: 'booking-1',
   eventTypeId: 'consultation',
-  timeRange: {
-    start: '2026-10-08T09:00:00.000Z',
-    end: '2026-10-08T09:30:00.000Z',
-  },
+  timeRange: range(1, 11, 30),
   guestName: 'Гость',
   guestEmail: 'guest@example.com',
-  createdAt: '2026-10-07T10:00:00.000Z',
+  createdAt: now.toISOString(),
 }
+
+/**
+ * Брони для заглушек.
+ *
+ * Три записи и два Типа, а не одна: фильтр встреч и разведение прошедших не видны
+ * на одной записи, и проверять их приходилось бы вслепую.
+ *
+ * Интервалы считаются от «сейчас», а не зашиты: зашитая дата однажды просто
+ * перестанет быть будущей, и все три встречи окажутся прошедшими.
+ */
+const stubBookingList = [
+  { ...stubBooking, id: 'booking-upcoming', timeRange: range(1, 11, 30) },
+  {
+    ...stubBooking,
+    id: 'booking-other-type',
+    eventTypeId: 'review',
+    timeRange: range(1, 14, 60),
+    guestName: 'Иван Петров',
+    guestEmail: 'ivan@example.com',
+  },
+  {
+    ...stubBooking,
+    id: 'booking-past',
+    timeRange: range(-1, 11, 30),
+    guestName: 'Анна',
+    guestEmail: 'anna@example.com',
+  },
+]
 
 const stubEventType = {
   id: 'consultation',
@@ -50,7 +99,21 @@ const stubEventType = {
   bookingCount: 0,
 }
 
-const stubEventTypeList = { types: [stubEventType] }
+/**
+ * Второй Тип события.
+ *
+ * Нужен, чтобы в заглушке было из чего выбирать: фильтр встреч и ссылка «показать
+ * встречи этого Типа» на одной записи неразличимы.
+ */
+const stubOtherEventType = {
+  id: 'review',
+  name: 'Разбор проекта',
+  description: 'Час о вашем проекте',
+  durationMinutes: 60,
+  bookingCount: 1,
+}
+
+const stubEventTypeList = { types: [stubEventType, stubOtherEventType] }
 
 const stubEventTypeNotFound = {
   code: 'event_type_not_found',
@@ -89,13 +152,27 @@ const stubTimeNotBookable = {
   field: 'timeRange',
 }
 
+/**
+ * Окна приёма для заглушек: сегодня и три дня вперёд, 09:00–18:00.
+ *
+ * Даты считаются от «сейчас», а не зашиты: заглушка работает и в разработке, где
+ * зашитая дата рано или поздно перестаёт содержать Слоты, и страница записи
+ * становится пустой без единого объяснения. Модуль перечитывается на каждой
+ * перезагрузке страницы, поэтому окна следуют за календарём.
+ *
+ * Границы заданы **местным** временем, а не московским: интерфейс показывает
+ * Слоты в Местном времени гостя, и окно от девяти утра по местному даёт слоты на
+ * сегодняшний день у того, кто смотрит. Окно в UTC отстало бы на сутки от
+ * календаря, который рисует страница.
+ */
 const stubWindowList = {
-  windows: [
-    {
-      start: '2026-10-08T06:00:00.000Z',
-      end: '2026-10-08T15:00:00.000Z',
-    },
-  ],
+  windows: [0, 1, 2, 3].map((offset) => {
+    const now = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 9, 0, 0, 0)
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 18, 0, 0, 0)
+
+    return { start: from.toISOString(), end: to.toISOString() }
+  }),
 }
 
 /**
@@ -123,7 +200,7 @@ const defaults: Record<StubbedOperation, string> = {
  */
 export const stubbedResponses: Record<StubbedOperation, StubbedResponse[]> = {
   'GET /bookings': [
-    { status: 200, model: 'Booking', body: [stubBooking] },
+    { status: 200, model: 'Booking', body: stubBookingList },
     { status: 503, model: 'ServiceUnavailableError', body: stubServiceUnavailable },
   ],
 
