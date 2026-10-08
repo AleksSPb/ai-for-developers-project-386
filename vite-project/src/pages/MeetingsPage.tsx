@@ -6,6 +6,7 @@ import { formatDayWithYear } from '../app/formatDate'
 import { formatSlotRange, formatTime } from '../app/formatTime'
 import { getGuestTimeZone } from '../app/formatTimeZone'
 import { eventTypeFromAddress, MEETINGS_FILTER_PARAM } from '../app/meetingsFilter'
+import { usePageSources } from '../app/useApp'
 import { useMeetings, type Meeting } from '../app/useMeetings'
 import { useNow } from '../app/useNow'
 import { useReloadEvery } from '../app/useReloadEvery'
@@ -47,7 +48,11 @@ const MeetingsPage = () => {
   const timeZone = getGuestTimeZone()
   const now = useNow()
 
-  useReloadEvery(reload, WATCH_INTERVAL_MS)
+  // Реестр приложения: кнопка повтора перечитывает все источники страницы, а не
+  // один — см. `usePageSources`.
+  usePageSources([reload])
+
+  useReloadEvery(reload, WATCH_INTERVAL_MS, source.kind === 'отказ')
 
   const [isPastOpen, setIsPastOpen] = useState(false)
 
@@ -67,7 +72,7 @@ const MeetingsPage = () => {
     return (
       <Stack gap="lg">
         {header}
-        <SourceAlert message={source.message} />
+        <SourceAlert />
       </Stack>
     )
   }

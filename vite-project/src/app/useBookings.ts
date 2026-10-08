@@ -19,10 +19,17 @@ import {
  * отправкой.
  */
 
+/**
+ * Список Броней: тот же источник, что и у остальных экранов, и те же три состояния.
+ *
+ * Поля с текстом у отказа нет: текст принадлежит приложению и живёт в
+ * `sourceText`. Держать здесь `message` из ответа значило бы дать каждой странице
+ * шанс вывести серверную строку, и одна из них рано или поздно её вывела бы.
+ */
 export type BookingsState =
   | { kind: 'загрузка' }
   | { kind: 'готов'; value: readonly Booking[] }
-  | { kind: 'отказ'; message: string }
+  | { kind: 'отказ' }
 
 interface Loaded {
   /** Номер выгрузки: состояние показывается, только если оно свежее. */
@@ -58,7 +65,7 @@ export const useBookings = () => {
         state:
           response.status === 200
             ? { kind: 'готов', value: toDomainBookings(response.data) }
-            : { kind: 'отказ', message: response.data.message },
+            : { kind: 'отказ' },
       })
     }
 

@@ -32,7 +32,7 @@ const UpcomingPage = () => {
     return (
       <Stack gap="lg">
         {header}
-        <SourceAlert message={bookingsState.message} />
+        <SourceAlert />
       </Stack>
     )
   }

@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 
+import { AppProvider } from '../app/AppProvider'
 import { TEXT_LIMITS } from '../app/textLimits'
 import { server } from '../test/server'
 import EventTypesPage from './EventTypesPage'
@@ -39,9 +40,11 @@ const withFailure = () =>
 const renderPage = () =>
   render(
     <MantineProvider>
-      <MemoryRouter>
-        <EventTypesPage />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter>
+          <EventTypesPage />
+        </MemoryRouter>
+      </AppProvider>
     </MantineProvider>,
   )
 
@@ -543,6 +546,9 @@ describe('страница Типов событий', () => {
     )
     renderPage()
     await ready()
+    // Провайдер читает список Броней при монтировании, и его чтение не имеет
+    // отношения к сторожу этой страницы.
+    const before = asked.bookings
 
     // Свою правку Типа Владелец видит сразу, а встреча появляется от записи Гостя —
     // она на странице встреч. Здесь таймер ходил бы по серверу без причины.
@@ -550,7 +556,7 @@ describe('страница Типов событий', () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000)
     })
 
-    expect(asked.bookings).toBe(0)
+    expect(asked.bookings).toBe(before)
   })
 
   it('не грузит окна приёма', async () => {

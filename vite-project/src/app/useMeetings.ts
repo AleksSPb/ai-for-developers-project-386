@@ -33,10 +33,7 @@ const readMeetings = async (): Promise<SourceState<OwnerMeetings>> => {
   const [bookings, types] = await Promise.all([bookingsListBookings(), eventTypesListEventTypes()])
 
   if (bookings.status !== 200 || types.status !== 200) {
-    const failed = bookings.status !== 200 ? bookings : types
-    const message = (failed.data as { message?: string }).message
-
-    return { kind: 'отказ', message: message ?? 'Сервис временно недоступен' }
+    return { kind: 'отказ' }
   }
 
   const byId = new Map(types.data.types.map((type) => [type.id, type]))

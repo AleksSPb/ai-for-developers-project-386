@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, type ReactNode } from 'react'
 
 import { validateGuest } from '../domain/booking'
 import { useBookings } from '../app/useBookings'
@@ -20,8 +20,24 @@ export interface AppProviderProps {
 }
 
 export const AppProvider = ({ children }: AppProviderProps) => {
-  const { state, create } = useBookings()
+  const { state, create, reload } = useBookings()
   const now = useNow()
+
+  /**
+   * Перечитывание всех источников страницы.
+   *
+   * Реестр, а не список поимённо: страница переходит с экрана на экран, и её набор
+   * источников меняется. Список в состоянии тащил бы за собой мёртвые перечитывания
+   * ушедшей страницы, и кнопка повтора дёргала бы их после возврата.
+   *
+   * Последняя зарегистрированная страница и есть текущая: реакции идут строго по
+   * одной, и замена реакции происходит на размонтировании предыдущей страницы.
+   */
+  const reloadPageSources = useRef<(() => void) | null>(null)
+
+  const registerSources = useCallback((reloadAll: () => void) => {
+    reloadPageSources.current = reloadAll
+  }, [])
 
   /**
    * Забронировать Слот.
@@ -52,14 +68,29 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     [create],
   )
 
+  /**
+   * Повторить чтение всех источников страницы.
+   *
+   * Единственный повтор в приложении, и он только по действию гостя: автоматических
+   * повторов нет ни одного, иначе приложение долбило бы сервер без участия
+   * человека и выдавало бы запись за то, что её кто-то подтвердил.
+   */
+  const retryAll = useCallback(() => {
+    reload()
+    reloadPageSources.current?.()
+  }, [reload])
+
   const value = useMemo(
     () => ({
       bookingsState: state,
       bookings: state.kind === 'готов' ? state.value : [],
       now,
+      reload,
       addBooking,
+      retryAll,
+      registerSources,
     }),
-    [state, now, addBooking],
+    [state, now, reload, addBooking, retryAll, registerSources],
   )
 
   return <AppContext value={value}>{children}</AppContext>
