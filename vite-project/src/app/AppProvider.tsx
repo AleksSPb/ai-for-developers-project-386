@@ -1,7 +1,8 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
 
 import { validateGuest } from '../domain/booking'
-import { useBookings, type CreateResult } from '../app/useBookings'
+import { useBookings } from '../app/useBookings'
+import type { CreateOutcome } from './bookingRefusal'
 import { useNow } from './useNow'
 import { AppContext } from './appContext'
 
@@ -27,17 +28,20 @@ export const AppProvider = ({ children }: AppProviderProps) => {
    *
    * Единственная проверка перед отправкой — форма Гостя: пустое имя или почту
    * сервер тоже отвергнет, но ждать ответа ради заведомо плохих данных незачем.
+   *
+   * Проверки конфликта здесь нет и не планируется: за конфликт отвечает сервер
+   * один раз. Клиентская проверка была бы второй правдой о том же факте.
    */
   const addBooking = useCallback(
     async (
       slot: Parameters<typeof create>[0],
       eventTypeId: string,
       guest: { name: string; email: string },
-    ): Promise<CreateResult> => {
+    ): Promise<CreateOutcome> => {
       const errors = validateGuest(guest)
 
       if (Object.keys(errors).length > 0) {
-        return { ok: false, message: 'Проверьте имя и почту' }
+        return { kind: 'отказ', refusal: { kind: 'данные', fields: Object.keys(errors) } }
       }
 
       return create(slot, eventTypeId, guest)

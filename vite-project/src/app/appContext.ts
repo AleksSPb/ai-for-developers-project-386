@@ -1,7 +1,8 @@
 import { createContext } from 'react'
 import type { Booking } from '../domain/booking'
 import type { Slot } from '../domain/slots'
-import type { BookingsState, CreateResult } from './useBookings'
+import type { CreateOutcome } from './bookingRefusal'
+import type { BookingsState } from './useBookings'
 
 export interface AppContextValue {
   /**
@@ -19,7 +20,7 @@ export interface AppContextValue {
     slot: Slot,
     eventTypeId: string,
     guest: { name: string; email: string },
-  ) => Promise<CreateResult>
+  ) => Promise<CreateOutcome>
 }
 
 /**
