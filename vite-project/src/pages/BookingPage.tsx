@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Navigate } from 'react-router'
 
 import { Alert, Card, Group, Stack, Text, Title } from '@mantine/core'
 
@@ -44,6 +45,21 @@ type Step = 'choose' | 'confirm' | 'done'
  * есть как ложь о сервере. Поэтому страница ждёт все источники и называет
  * непришедший: «Загружаем окна приёма…».
  */
+/**
+ * Типа из адреса нет на сервере.
+ *
+ * Гость видит **страницу выбора**, а не ошибку про ссылку и не страницу записи с
+ * пустым набором Слотов: второе показало бы интерфейс, который не может предложить
+ * ничего, и молчал бы, будто записаться нельзя нигде.
+ *
+ * Отдельного текста про устаревшую ссылку не заводим: на странице выбора уже есть
+ * заголовок и пустое состояние, а второе сообщение об одном факте только путало бы.
+ *
+ * Адрес при этом меняется на `/book` — устаревший идентификатор не должен остаться в
+ * истории браузера, иначе «назад» вернёт на ту же мёртвую ссылку.
+ */
+const StaleTypeLink = () => <Navigate to="/book" replace />
+
 const BookingPage = ({ eventTypeId }: BookingPageProps) => {
   const { bookings, now } = useApp()
   const sources = useBookingSources(eventTypeId)
@@ -93,6 +109,12 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
       : sources.eventType.kind === 'отказ'
         ? sources.eventType
         : null
+
+  // Проверка после всех хуков: если Типа нет, ни календаря, ни его пустого
+  // состояния показывать нельзя — гость должен попасть на выбор.
+  if (sources.eventType.kind === 'нет типа') {
+    return <StaleTypeLink />
+  }
 
   if (failure !== null) {
     return (
