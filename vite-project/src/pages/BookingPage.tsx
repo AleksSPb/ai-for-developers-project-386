@@ -12,11 +12,13 @@ import {
 } from '../app/calendarView'
 import { getGuestTimeZone } from '../app/formatTimeZone'
 import { missingSource, sourceLabel, useBookingSources } from '../app/useBookingSources'
+import { returnsToCalendar, type BookingRefusal } from '../app/bookingRefusal'
 import { getDateKey, getMonthKey, type DateKey, type MonthKey } from '../domain/calendar'
 import { getSlotStatus } from '../domain/day'
 import type { Slot } from '../domain/slots'
 import BookingConfirm from '../components/BookingConfirm'
 import BookingHeader from '../components/BookingHeader'
+import BookingRefusalAlert from '../components/BookingRefusalAlert'
 import BookingSuccess from '../components/BookingSuccess'
 import CalendarGrid from '../components/CalendarGrid'
 import EventTypeFromUrlCard from '../components/EventTypeFromUrlCard'
@@ -77,6 +79,13 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
    * который гость подтвердил, а не «первый доступный» из текущего списка.
    */
   const [confirmedSlot, setConfirmedSlot] = useState<Slot | null>(null)
+  /**
+   * Отказ записи живёт на странице, а не в форме.
+   *
+   * Отказ по времени уводит гостя к выбору дня, и форма исчезает вместе с собой —
+   * будь отказ её состоянием, текст ушёл бы в никуда вместе с компонентом.
+   */
+  const [refusal, setRefusal] = useState<BookingRefusal | null>(null)
 
   // Оба источника пришли — и тогда из них собирается Правило расписания:
   // окна приёма и длительность Типа события. Мемоизировано, потому что от
@@ -161,15 +170,39 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
   const slots = (selected?.slots ?? []).filter((slot) => getSlotStatus(slot, bookings, now) !== 'прошедший')
   const availableCount = selected?.state.kind === 'доступен' ? selected.state.available : 0
 
+  /**
+   * Отказ записи.
+   *
+   * Отказ по времени и «не найдено» возвращают гостя к выбору дня: выбранного
+   * Слота больше нет, и оставлять форму с устаревшим интервалом значило бы держать
+   * на экране отправку, которая вернёт тот же отказ.
+   */
+  const handleRefused = (next: BookingRefusal) => {
+    setRefusal(next)
+
+    if (returnsToCalendar(next)) {
+      setSelectedSlot(null)
+      setStep('choose')
+    }
+  }
+
   const selectDate = (date: DateKey) => {
     setSelectedDate(date)
     // Слот от прошлой даты на новой не существует, поэтому снимаем выбор.
     setSelectedSlot(null)
+    // Отказ прошлой попытки относился к прошлому дню: на новом он неуместен.
+    setRefusal(null)
   }
 
   return (
     <Stack gap="lg">
       <BookingHeader name={ready.eventType.name} description={ready.eventType.description} />
+
+      {/* Отказ записи стоит над тремя блоками, а не внутри формы: отказ по времени
+          уводит гостя к календарю, и текст должен остаться видимым после ухода
+          формы. */}
+      {refusal !== null && <BookingRefusalAlert refusal={refusal} />}
+
       <Group align="stretch" gap="lg" wrap="wrap">
         <Card withBorder padding="lg" radius="md" style={{ width: 280, flex: '0 0 auto' }}>
           <InfoPanel
@@ -186,11 +219,17 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
             slot={selectedSlot}
             eventTypeId={eventTypeId}
             timeZone={timeZone}
-            onEdit={() => setStep('choose')}
+            refusal={refusal}
+            onRefused={handleRefused}
+            onEdit={() => {
+              setRefusal(null)
+              setStep('choose')
+            }}
             onDone={() => {
               if (selectedSlot !== null) {
                 setConfirmedSlot(selectedSlot)
               }
+              setRefusal(null)
               setStep('done')
             }}
           />
@@ -203,6 +242,7 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
                   // Слот снимается вместе с успехом: он уже занят этой же Бронью,
                   // и «Продолжить» увело бы Гостя обратно на занятое время.
                   setSelectedSlot(null)
+                  setRefusal(null)
                   setStep('choose')
                 }}
               />
@@ -228,7 +268,11 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
                 now={now}
                 timeZone={timeZone}
                 selectedSlot={selectedSlot}
-                onSelect={setSelectedSlot}
+                onSelect={(slot) => {
+                  setSelectedSlot(slot)
+                  // Отказ относился к прежнему Слоту, а гость выбрал другой.
+                  setRefusal(null)
+                }}
                 onContinue={() => setStep('confirm')}
               />
             </Card>

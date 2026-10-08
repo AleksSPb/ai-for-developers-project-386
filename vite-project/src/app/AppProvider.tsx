@@ -2,7 +2,7 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 
 import { validateGuest } from '../domain/booking'
 import { useBookings } from '../app/useBookings'
-import type { CreateOutcome } from './bookingRefusal'
+import type { CreateOutcome, GuestField } from './bookingRefusal'
 import { useNow } from './useNow'
 import { AppContext } from './appContext'
 
@@ -41,7 +41,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       const errors = validateGuest(guest)
 
       if (Object.keys(errors).length > 0) {
-        return { kind: 'отказ', refusal: { kind: 'данные', fields: Object.keys(errors) } }
+        return {
+          kind: 'отказ',
+          refusal: { kind: 'данные', fields: Object.keys(errors) as GuestField[] },
+        }
       }
 
       return create(slot, eventTypeId, guest)
