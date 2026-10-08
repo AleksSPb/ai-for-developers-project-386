@@ -1,11 +1,23 @@
 import { Container } from '@mantine/core'
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes, useParams } from 'react-router'
 
 import AppHeader from './components/AppHeader'
 import BookingPage from './pages/BookingPage'
 import EventTypesPage from './pages/EventTypesPage'
 import MeetingsPage from './pages/MeetingsPage'
+import TypeSelectionPage from './pages/TypeSelectionPage'
 import UpcomingPage from './pages/UpcomingPage'
+
+/**
+ * Маршрут `/book/:eventTypeId` передаёт идентификатор Типа странице.
+ *
+ * Знание адреса живёт здесь, в маршруте, а не внутри страницы: страница получает
+ * то, что ей нужно, и не разбирает, откуда оно взялось.
+ */
+const BookingRoute = () => {
+  const { eventTypeId = '' } = useParams()
+  return <BookingPage eventTypeId={eventTypeId} />
+}
 
 /**
  * Роутер живёт в `main.tsx`, а не здесь: тесты подставляют свой, чтобы
@@ -21,7 +33,9 @@ function App() {
       <AppHeader />
       <Container size="lg" py="xl">
         <Routes>
-          <Route path="/book" element={<BookingPage />} />
+          {/* Голого адреса без Типа не существует: `/book` ведёт на выбор. */}
+          <Route path="/book" element={<TypeSelectionPage />} />
+          <Route path="/book/:eventTypeId" element={<BookingRoute />} />
           <Route path="/bookings" element={<UpcomingPage />} />
           <Route path="/event-types" element={<EventTypesPage />} />
           <Route path="/meetings" element={<MeetingsPage />} />

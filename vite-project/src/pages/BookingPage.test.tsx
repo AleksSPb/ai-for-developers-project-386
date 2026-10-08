@@ -1,5 +1,6 @@
 import { MantineProvider } from '@mantine/core'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppProvider } from '../app/AppProvider'
@@ -14,6 +15,10 @@ import BookingPage from './BookingPage'
  *
  * Страница ходит в сгенерированный клиент, поэтому источники подменяются через
  * MSW: иначе тест проверял бы заглушку вместо страницы.
+ *
+ * Идентификатор Типа события приходит **из адреса** и передаётся пропом: маршрут
+ * его знает, а страница не разбирает, откуда он взялся. Голый `/book` ведёт на
+ * выбор Типа — записи без Типа не существует.
  *
  * «Сейчас» — 09:00 по Москве 8 октября: окно 09:00–18:00 делится на часовые
  * Слоты, первый уже начался, поэтому в списке его нет.
@@ -43,7 +48,9 @@ const createMemoryStorage = (initial: readonly Booking[] = []): BookingStorage =
 const storageWith = (storage: BookingStorage) => (
   <MantineProvider>
     <AppProvider storage={storage}>
-      <BookingPage />
+      <MemoryRouter>
+        <BookingPage eventTypeId="consultation" />
+      </MemoryRouter>
     </AppProvider>
   </MantineProvider>
 )
@@ -90,9 +97,14 @@ const slotButton = (range: string): HTMLElement => {
   return button
 }
 
-/** Ответы приходят промисом, поэтому первый экран — текст загрузки. */
+/**
+ * Ответы приходят промисом, поэтому первый экран — текст загрузки.
+ *
+ * Ждём панели информации: длительность Слота на странице записи больше не
+ * показывается, и ждать её было бы ожиданием того, чего на экране нет.
+ */
 const awaitSources = async () => {
-  await screen.findByText('Длительность слота')
+  await screen.findByText('Выбранная дата')
 }
 
 const booking = (startIso: string, id = 'b1'): Booking => ({
@@ -146,8 +158,6 @@ describe('календарь', () => {
     renderPage()
     await awaitSources()
 
-    // Заголовок несёт диапазон и в обрезанном месяце: слева сегодня, справа
-    // последний день со Слотом, а не конец месяца.
     expect(screen.getByText('8 – 9 октября 2026')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Предыдущий месяц' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: 'Следующий месяц' })).toHaveProperty('disabled', true)
@@ -174,14 +184,29 @@ describe('календарь', () => {
     expect(screen.queryByText('9')).toBeNull()
   })
 
-  it('показывает длительность Слота из Типа события', async () => {
+  it('длительность Слота рядом с интервалом не показывается', async () => {
+    // Длительность видна гостю ровно в одном месте — на карточке выбора Типа, где
+    // она обещает. Рядом с интервалом она ничего не обещала бы, только шумела.
     server.resetHandlers()
     server.use(stubWindowsHandler(window_), stubEventTypeHandler(45))
     renderPage()
     await awaitSources()
 
-    const row = screen.getByText('Длительность слота').parentElement
-    expect(row?.textContent).toBe('Длительность слота45 мин')
+    expect(screen.queryByText('Длительность слота')).toBeNull()
+    expect(screen.queryByText('45 мин')).toBeNull()
+  })
+
+  it('длительность Типа всё равно влияет на деление окна', async () => {
+    server.resetHandlers()
+    server.use(stubWindowsHandler(window_), stubEventTypeHandler(45))
+    renderPage()
+    await awaitSources()
+
+    // Длительность не показана, но по ней считают Слоты: при 45 минутах второй
+    // Слот — 09:45–10:30, а при 60 это 10:00–11:00. Список другой, значит
+    // длительность действительно применилась.
+    expect(screen.getByText('09:45 – 10:30')).toBeTruthy()
+    expect(screen.queryByText('10:00 – 11:00')).toBeNull()
   })
 
   it('делит окно на Слоты длительности Типа', async () => {
