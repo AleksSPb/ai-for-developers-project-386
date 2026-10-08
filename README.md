@@ -25,6 +25,7 @@ Testing Library.
   организатора константа.
 - `vite-project/src/domain/` — расписание, брони и время. Чистый TypeScript:
   ни React, ни `localStorage`, всё проверяется без браузера.
+- Проверка состояния CI: строка добавлена без изменения кода.
 - `vite-project/main.tsp` и `vite-project/contract/openapi.yaml` — контракт API.
   Источник правды — `main.tsp`, из него собирается спецификация.
 - `vite-project/src/api/` — слой обращения к серверу: адрес, сборка запроса и
