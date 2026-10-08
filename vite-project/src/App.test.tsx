@@ -1,57 +1,82 @@
 import { MantineProvider } from '@mantine/core'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
+import { server } from './test/server'
 import { AppProvider } from './app/AppProvider'
 import type { BookingStorage } from './ports/storage'
 import App from './App'
 
-// Хранилище-заглушка: маршруты проверяются без браузерного состояния.
+/** Хранилище-заглушка: гостевой странице провайдер нужен, данные тут ни при чём. */
 const storage: BookingStorage = { read: () => [], write: () => {} }
 
-// Роутер подставляется тестом: в приложении его ставит main.tsx, а здесь
-// важно проверять страницы по адресу, не трогая историю браузера.
+/**
+ * Раздел Владельца разведён с гостевой частью по адресам.
+ *
+ * Типы событий и Встречи — разные адреса, а не один экран: у страниц разный
+ * состав источников. И гостевую шапку нельзя засорять ссылкой на раздел —
+ * единственный вход в него ручной, и Гость про Владельца не знает.
+ */
+
+const withSources = () => {
+  server.use(
+    http.get('/bookings', () => HttpResponse.json([], { status: 200 })),
+    http.get('/event-types', () =>
+      HttpResponse.json({ types: [] }, { status: 200 }),
+    ),
+  )
+}
+
 const renderAt = (path: string) =>
   render(
     <MantineProvider>
-      <MemoryRouter initialEntries={[path]}>
-        <AppProvider storage={storage}>
+      <AppProvider storage={storage}>
+        <MemoryRouter initialEntries={[path]}>
           <App />
-        </AppProvider>
-      </MemoryRouter>
+        </MemoryRouter>
+      </AppProvider>
     </MantineProvider>,
   )
 
-const bookingHeading = () => screen.getByRole('heading', { name: 'Запись на звонок', level: 1 })
-
-describe('маршруты', () => {
-  it('показывает страницу записи', () => {
-    renderAt('/book')
-    expect(bookingHeading()).toBeTruthy()
-  })
-
-  it('показывает список Броней', () => {
-    renderAt('/bookings')
-    expect(screen.getByRole('heading', { name: 'Брони', level: 1 })).toBeTruthy()
-  })
-
-  it('неизвестный адрес открывает страницу записи, а не пустую страницу', () => {
-    renderAt('/нет-такой-страницы')
-    expect(bookingHeading()).toBeTruthy()
-  })
+beforeEach(() => {
+  withSources()
 })
 
-describe('шапка', () => {
-  it('ведёт в оба раздела', () => {
-    renderAt('/book')
-    expect(screen.getByRole('link', { name: 'Записаться' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Брони' })).toBeTruthy()
+describe('раздел Владельца', () => {
+  it('Типы событий и Встречи живут на разных адресах', async () => {
+    renderAt('/event-types')
+    expect(await screen.findByRole('heading', { name: 'Типы событий' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Встречи' })).toBeNull()
   })
 
-  it('переключает раздел по ссылке', () => {
+  it('по адресу встреч открывается страница встреч, а не типов', async () => {
+    renderAt('/meetings')
+    expect(await screen.findByRole('heading', { name: 'Встречи' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Типы событий' })).toBeNull()
+  })
+
+  it('в гостевой шапке нет ссылки на раздел Владельца', async () => {
     renderAt('/book')
-    fireEvent.click(screen.getByRole('link', { name: 'Брони' }))
-    expect(screen.getByRole('heading', { name: 'Брони', level: 1 })).toBeTruthy()
+    await screen.findByRole('heading', { name: 'Запись на звонок' })
+
+    // Гость про Владельца не знает, и ссылка в шапке спросила бы его об этом.
+    expect(screen.queryByRole('link', { name: 'Типы событий' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Встречи' })).toBeNull()
+  })
+
+  it('в шапке раздела есть ссылки на оба экрана и выход в гостевую страницу', async () => {
+    renderAt('/event-types')
+    await screen.findByRole('heading', { name: 'Типы событий' })
+
+    expect(screen.getByRole('link', { name: 'Типы событий' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Встречи' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Записаться' })).toBeTruthy()
+  })
+
+  it('гостевая страница записи по-прежнему открывается', async () => {
+    renderAt('/book')
+    expect(await screen.findByRole('heading', { name: 'Запись на звонок' })).toBeTruthy()
   })
 })
