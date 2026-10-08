@@ -106,6 +106,42 @@ const awaitSources = async () => {
   await screen.findByText('Выбранная дата')
 }
 
+/**
+ * Ответ на создание Брони и счётчик прочтений списка.
+ *
+ * Тело ответа **изменяемое**: один обработчик переживает два прогона, а
+ * `server.use` отдаёт предпочтение подставленному последним, поэтому второй
+ * `server.use` внутри одного теста просто не сработал бы.
+ *
+ * Живёт на уровне файла, а не внутри `describe`: отказами записи занимаются два
+ * блока тестов, и общий помощник внутри одного из них был бы недоступен второму.
+ */
+const postWith = (status: number, body: unknown) => {
+  const state = { gets: 0, posts: 0, status, body }
+
+  server.use(
+    http.post('/bookings', () => {
+      state.posts += 1
+      return HttpResponse.json(state.body as Record<string, unknown>, { status: state.status })
+    }),
+    http.get('/bookings', () => {
+      state.gets += 1
+      return HttpResponse.json([], { status: 200 })
+    }),
+  )
+
+  return state
+}
+
+/** Выбрать Слот, дойти до формы, заполнить её и отправить. */
+const submitAs = async () => {
+  fireEvent.click(slotButton('10:00 – 11:00'))
+  fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
+  fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+}
+
 const booking = (startIso: string, id = 'b1'): Booking => ({
   id,
   eventTypeId: 'consultation',
@@ -546,5 +582,265 @@ describe('отказ по занятости', () => {
     // относится к одному Слоту, а не к записи гостя в целом.
     expect(slotButton('11:00 – 12:00')).toHaveProperty('disabled', false)
     expect(state.posts).toBe(1)
+  })
+})
+
+/**
+ * Отказы, которые уводят гостя от формы.
+ *
+ * Все три ответа даны через заглушку сетевого слоя: тест проверяет страницу, а не
+ * разбор ответов — разбор проверяется отдельно в `bookingRefusal.test.ts`.
+ */
+describe('отказ уводит гостя от формы', () => {
+  it('отказ по времени уводит к выбору дня и говорит про время', async () => {
+    postWith(422, {
+      code: 'time_not_bookable',
+      message: 'На это время записаться нельзя',
+      field: 'timeRange',
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    // Слота, который гость выбрал, больше нет: форма с устаревшим интервалом была бы
+    // формой, отправка которой вернула бы тот же отказ.
+    expect(await screen.findByText('Выбранное время больше недоступно')).toBeTruthy()
+    expect(screen.getByText('Статус слотов')).toBeTruthy()
+    expect(screen.queryByLabelText('Имя')).toBeNull()
+  })
+
+  it('отказ по времени не подсвечивает ни одного поля', async () => {
+    postWith(422, {
+      code: 'time_not_bookable',
+      message: 'На это время записаться нельзя',
+      field: 'timeRange',
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    await screen.findByText('Выбранное время больше недоступно')
+
+    // Подсвечивать нечего: гость выбирал Слот из сетки, а не вводил время, и полей
+    // интервала на форме нет.
+    expect(screen.queryByText('Значение не подходит')).toBeNull()
+  })
+
+  it('ошибка проверки данных оставляет форму и подсвечивает поля', async () => {
+    postWith(422, {
+      code: 'validation_failed',
+      message: 'Проверка не прошла',
+      fields: ['guestName', 'guestEmail'],
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    expect(await screen.findByText('Проверьте имя и почту')).toBeTruthy()
+    // Исправление госта и повтор могут дать успех, поэтому форма остаётся.
+    expect(screen.getByLabelText('Имя')).toBeTruthy()
+    expect(screen.getByLabelText('Имя')).toHaveProperty('value', 'Demo User')
+
+    // Все негодные поля сразу: по одному ждать четыре круга туда-обратно незачем.
+    const highlighted = screen.getAllByText('Значение не подходит')
+    expect(highlighted).toHaveLength(2)
+  })
+
+  it('ошибка проверки данных говорит не про время', async () => {
+    postWith(422, {
+      code: 'validation_failed',
+      message: 'Проверка не прошла',
+      fields: ['guestName'],
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    const text = await screen.findByText('Проверьте имя и почту')
+
+    // Время гость только что выбрал, и оно было доступно: «выбранное время больше
+    // недоступно» на негодном имени сказало бы гостю неправду.
+    expect(text.textContent).not.toMatch(/время/i)
+  })
+
+  it('оба кода «не найдено» дают один текст и одно действие', async () => {
+    // Один обработчик на два прогона: `server.use` внутри теста повторно не
+    // сработал бы, и второй код остался бы непроверенным.
+    const state = postWith(404, { code: 'slot_not_found', message: 'Слот не найден' })
+
+    for (const code of ['slot_not_found', 'event_type_not_found']) {
+      state.body = { code, message: 'Слот не найден' }
+      const view = render(storageWith())
+      await awaitSources()
+      await submitAs()
+
+      // Оба уводят к календарю и звучат одинаково: различать их на записи нечем,
+      // а «Тип события не найден» там и вовсе недостижим.
+      expect(await screen.findByText('Выбранное время больше недоступно')).toBeTruthy()
+      expect(screen.getByText('Статус слотов')).toBeTruthy()
+      expect(screen.queryByLabelText('Имя')).toBeNull()
+
+      view.unmount()
+    }
+  })
+})
+
+/**
+ * Ответ о недоступности и оборванная сеть.
+ *
+ * Гость не может знать, где именно оборвалось, и различать эти случаи текстом
+ * значило бы утверждать то, чего он не знает. Различает их последствие: ответ
+ * сервера означает, что запись не создана, а оборванный запрос — что она могла.
+ */
+describe('недоступность и оборванная сеть', () => {
+  const UNAVAILABLE_TEXT = 'Записаться не получилось. Попробуйте ещё раз'
+
+  /**
+   * Оборванная сеть: запрос не доходит до ответа вовсе.
+   *
+   * `HttpResponse.error()` рвёт запрос, а не отвечает статусом, — так ведёт себя
+   * потерянное соединение, и ни один ответ с телом тут не приходит.
+   */
+  const withBrokenNetwork = () => {
+    const state = { gets: 0, posts: 0 }
+
+    server.use(
+      http.post('/bookings', () => {
+        state.posts += 1
+        return HttpResponse.error()
+      }),
+      http.get('/bookings', () => {
+        state.gets += 1
+        return HttpResponse.json([], { status: 200 })
+      }),
+    )
+
+    return state
+  }
+
+  const renderUnavailable = () => {
+    const state = postWith(503, {
+      code: 'service_unavailable',
+      message: 'Сервис временно недоступен',
+    })
+
+    render(storageWith())
+
+    return state
+  }
+
+  it('при недоступности сервиса говорит то же, что при оборванной сети', async () => {
+    renderUnavailable()
+    await awaitSources()
+    await submitAs()
+
+    expect(await screen.findByText(UNAVAILABLE_TEXT)).toBeTruthy()
+  })
+
+  it('при недоступности сервиса не предупреждает и не даёт ссылки', async () => {
+    renderUnavailable()
+    await awaitSources()
+    await submitAs()
+
+    await screen.findByText(UNAVAILABLE_TEXT)
+
+    // Ответ пришёл, значит запись точно не создана: предупреждение было бы ложью, а
+    // ссылка в списке записей — уводом в пустоту.
+    expect(screen.queryByText(/запись могла создаться/i)).toBeNull()
+    expect(screen.queryByRole('link', { name: /список/i })).toBeNull()
+  })
+
+  it('при оборванной сети предупреждает, что запись могла создаться', async () => {
+    withBrokenNetwork()
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    expect(await screen.findByText(UNAVAILABLE_TEXT)).toBeTruthy()
+    // Запрос ушёл, а ответа не пришло: гость не знает, создалась запись или нет.
+    expect(screen.getByText(/запись могла создаться/i)).toBeTruthy()
+  })
+
+  it('при оборванной сети даёт путь в список Броней внутри текста', async () => {
+    withBrokenNetwork()
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    // Без пути гость задал вопрос «записался ли я» и не получил ответа. Ссылка
+    // внутри текста, а не отдельной кнопкой: предупреждение читается один раз, а
+    // кнопку надо ещё найти глазами.
+    const link = await screen.findByRole('link', { name: 'Проверить список записей' })
+    expect(link.getAttribute('href')).toBe('/bookings')
+    expect(screen.queryByRole('button', { name: /список записей/i })).toBeNull()
+  })
+
+  it('при оборванной сети перечитывает список: запись могла создаться', async () => {
+    const state = withBrokenNetwork()
+    render(storageWith())
+    await awaitSources()
+    await waitFor(() => expect(state.gets).toBe(1))
+    await submitAs()
+
+    await waitFor(() => expect(state.gets).toBe(2))
+  })
+
+  it('при оборванной сети форма остаётся и повтор разрешён', async () => {
+    withBrokenNetwork()
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    await screen.findByText(UNAVAILABLE_TEXT)
+
+    // Отказ запроса ничего не говорит о Слоте: возможно, запись создалась, и
+    // повтор был бы второй записью на то же время.
+    expect(screen.getByRole('button', { name: 'Подтвердить запись' })).toHaveProperty(
+      'disabled',
+      false,
+    )
+  })
+
+  it('после оборванной сети список перечитан', async () => {
+    // Запись могла создаться, и перечитанный список — единственное место, где гость
+    // узнает об этом наверняка.
+    const state = withBrokenNetwork()
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    expect(await screen.findByText(UNAVAILABLE_TEXT)).toBeTruthy()
+    await waitFor(() => expect(state.gets).toBe(2))
+  })
+
+  it('после недоступности сервиса список перечитан', async () => {
+    const state = renderUnavailable()
+    await awaitSources()
+    await submitAs()
+
+    await screen.findByText(UNAVAILABLE_TEXT)
+    // Слот мог занять другой гость, пока сервер был недоступен: перечитывание после
+    // любой попытки одинаково, а не только после успешной записи.
+    await waitFor(() => expect(state.gets).toBe(2))
+  })
+
+  it('перечитывает список Броней после отказа по времени', async () => {
+    const state = postWith(422, {
+      code: 'time_not_bookable',
+      message: 'На это время записаться нельзя',
+      field: 'timeRange',
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    // Слот мог исчезнуть или занять другой гость, и список — единственный источник
+    // правды об этом.
+    await waitFor(() => expect(state.gets).toBe(2))
   })
 })

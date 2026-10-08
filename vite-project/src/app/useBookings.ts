@@ -4,7 +4,11 @@ import { bookingsCreateBooking, bookingsListBookings } from '../api/generated/ca
 import { toDomainBookings } from '../api/bookings'
 import type { Booking } from '../domain/booking'
 import type { Slot } from '../domain/slots'
-import { parseCreateResponse, type CreateOutcome } from './bookingRefusal'
+import {
+  networkRefusal,
+  parseCreateResponse,
+  type CreateOutcome,
+} from './bookingRefusal'
 
 /**
  * Брони на сервере.
@@ -84,14 +88,28 @@ export const useBookings = () => {
       eventTypeId: string,
       guest: { name: string; email: string },
     ): Promise<CreateOutcome> => {
-      const response = await bookingsCreateBooking({
-        eventTypeId,
-        timeRange: { start: slot.start.toISOString(), end: slot.end.toISOString() },
-        guestName: guest.name.trim(),
-        guestEmail: guest.email.trim().toLowerCase(),
-      })
+      /**
+       * Единственный `try/catch` в пути записи, и он ловит **отказ запроса**, а не
+       * отказ сервера: оборванная сеть не приносит тела, и разбирать нечего. Ответы
+       * 4xx и 5xx сюда не попадают — генератор их возвращает.
+       *
+       * Список перечитывается и после оборванной сети: запись могла создаться, и
+       * гость узнает об этом из перечитанного списка, а не из догадки.
+       */
+      let outcome: CreateOutcome
 
-      const outcome = parseCreateResponse(response)
+      try {
+        const response = await bookingsCreateBooking({
+          eventTypeId,
+          timeRange: { start: slot.start.toISOString(), end: slot.end.toISOString() },
+          guestName: guest.name.trim(),
+          guestEmail: guest.email.trim().toLowerCase(),
+        })
+
+        outcome = parseCreateResponse(response)
+      } catch {
+        outcome = networkRefusal()
+      }
 
       reload()
 

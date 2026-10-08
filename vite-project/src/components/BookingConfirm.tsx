@@ -7,13 +7,21 @@ import { validateGuest } from '../domain/booking'
 import { formatSlotRange } from '../app/formatTime'
 import { formatDayTitle } from '../app/formatDate'
 import type { Slot } from '../domain/slots'
-import { canRetry, refusalText, type BookingRefusal } from '../app/bookingRefusal'
+import {
+  canRetry,
+  fieldErrorsFrom,
+  type BookingRefusal,
+} from '../app/bookingRefusal'
 
 interface BookingConfirmProps {
   date: string
   slot: Slot
   eventTypeId: string
   timeZone: string
+  /** Отказ, который страница держит на экране: поля подсвечиваются по нему. */
+  refusal: BookingRefusal | null
+  /** Отказ уходит наверх: страница решает, остаётся форма или гость идёт к календарю. */
+  onRefused: (refusal: BookingRefusal) => void
   onEdit: () => void
   onDone: () => void
 }
@@ -29,29 +37,36 @@ interface BookingConfirmProps {
  * Отказ по занятости оставляет форму с введённым именем и почтой: терять их —
  * наказание за чужую занятость. При этом кнопка подтверждения перестаёт работать,
  * потому что Слот уже не свободен и повторная отправка вернула бы тот же отказ.
+ *
+ * Правка поля отказ **не** снимает: отказ пришёл от сервера, и пока гость снова не
+ * отправил форму, ничего нового о полях не известно.
  */
 const BookingConfirm = ({
   date,
   slot,
   eventTypeId,
   timeZone,
+  refusal,
+  onRefused,
   onEdit,
   onDone,
 }: BookingConfirmProps) => {
   const { addBooking } = useApp()
   const [guest, setGuest] = useState({ name: '', email: '' })
   const [isSubmitted, setIsSubmitted] = useState(false)
-  const [refusal, setRefusal] = useState<BookingRefusal | null>(null)
   const [isSending, setIsSending] = useState(false)
 
   // Ошибки показываются только после попытки подтверждения, иначе пустая форма
-  // выглядит как заведомо неправильная.
-  const errors = isSubmitted ? validateGuest(guest) : {}
+  // выглядит как заведомо неправильная. Отказ сервера подсвечивает поля поверх
+  // них же: гость исправляет всё негодное за один проход.
+  const errors = {
+    ...(isSubmitted ? validateGuest(guest) : {}),
+    ...(refusal === null ? {} : fieldErrorsFrom(refusal)),
+  }
   const retryable = refusal === null || canRetry(refusal)
 
   const submit = async () => {
     setIsSubmitted(true)
-    setRefusal(null)
 
     if (Object.keys(validateGuest(guest)).length > 0) {
       return
@@ -66,9 +81,9 @@ const BookingConfirm = ({
       return
     }
 
-    // Отказ сервера, а не текст из его тела: `message` из контракта — строка для
-    // разработчика, и перед гостем она была бы просто чужой фразой.
-    setRefusal(outcome.refusal)
+    // Отказ уходит наверх, а не рисуется здесь: отказ по времени должен увести
+    // гостя к выбору дня, а форма с устаревшим интервалом исчезнет вместе с собой.
+    onRefused(outcome.refusal)
   }
 
   return (
@@ -98,12 +113,6 @@ const BookingConfirm = ({
           onChange={(event) => setGuest({ ...guest, email: event.currentTarget.value })}
         />
       </Stack>
-
-      {refusal !== null && (
-        <Text c="red" size="sm" mt="sm">
-          {refusalText(refusal)}
-        </Text>
-      )}
 
       <Button fullWidth mt="md" onClick={submit} loading={isSending} disabled={!retryable}>
         Подтвердить запись
