@@ -5,12 +5,15 @@ import { Button, Card, Group, Stack, Text, TextInput } from '@mantine/core'
 import { useApp } from '../app/useApp'
 import type { GuestInput } from '../domain/booking'
 import { validateGuest } from '../domain/booking'
-import { formatDayTitle, formatSlotRange } from '../app/format'
-import type { DateKey, Slot } from '../domain/schedule'
+import { formatSlotRange } from '../app/formatTime'
+import { formatDayTitle } from '../app/formatDate'
+import type { Slot } from '../domain/slots'
 
 interface BookingConfirmProps {
-  date: DateKey
+  date: string
   slot: Slot
+  eventTypeId: string
+  timeZone: string
   onEdit: () => void
   onDone: () => void
 }
@@ -20,23 +23,32 @@ interface BookingConfirmProps {
  * На первом шаге их видеть нечем, а поднимать вверх без нужды значило бы
  * держать в памяти то, что никто не вводил.
  */
-const BookingConfirm = ({ date, slot, onEdit, onDone }: BookingConfirmProps) => {
+const BookingConfirm = ({
+  date,
+  slot,
+  eventTypeId,
+  timeZone,
+  onEdit,
+  onDone,
+}: BookingConfirmProps) => {
   const { addBooking } = useApp()
   const [guest, setGuest] = useState<GuestInput>({ name: '', email: '' })
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Ошибки показываются только после попытки подтверждения, иначе пустая
-  // форма выглядит как заведомо неправильная.
+  // Ошибки показываются только после попытки подтверждения, иначе пустая форма
+  // выглядит как заведомо неправильная.
   const errors = isSubmitted ? validateGuest(guest) : {}
 
   const submit = () => {
     setIsSubmitted(true)
-    const result = addBooking({ slot, guest })
+    const result = addBooking({ slot, eventTypeId, guest })
+
     if (result.ok) {
       onDone()
       return
     }
+
     setError(result.error)
   }
 
@@ -50,7 +62,7 @@ const BookingConfirm = ({ date, slot, onEdit, onDone }: BookingConfirmProps) => 
       </Group>
 
       <Text size="sm" c="dimmed" mt="xs">
-        {`${formatDayTitle(date)}, ${formatSlotRange(slot)}`}
+        {`${formatDayTitle(date)}, ${formatSlotRange(slot, timeZone)}`}
       </Text>
 
       <Stack gap="sm" mt="md">

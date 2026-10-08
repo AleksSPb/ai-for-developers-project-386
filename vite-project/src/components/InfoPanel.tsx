@@ -1,21 +1,27 @@
 import { Box, Stack, Text } from '@mantine/core'
 
-import { formatDayTitle, formatSlotDuration, formatSlotRange } from '../app/format'
-import type { DateKey, Slot } from '../domain/schedule'
+import { formatDayTitle } from '../app/formatDate'
+import { formatSlotDuration, formatSlotRange } from '../app/formatTime'
+import type { Slot } from '../domain/slots'
 
 interface InfoPanelProps {
-  date: DateKey
+  date: string | null
   slot: Slot | null
   availableCount: number
+  durationMinutes: number
+  timeZone: string
 }
 
-/** Что Гость выбрал и сколько в дне осталось, — четыре строки из макета. */
-const InfoPanel = ({ date, slot, availableCount }: InfoPanelProps) => {
+/** Что Гость выбрал и сколько в дне осталось. */
+const InfoPanel = ({ date, slot, availableCount, durationMinutes, timeZone }: InfoPanelProps) => {
   const rows: { label: string; value: string }[] = [
-    { label: 'Выбранная дата', value: formatDayTitle(date) },
-    { label: 'Выбранное время', value: slot === null ? 'Время не выбрано' : formatSlotRange(slot) },
+    { label: 'Выбранная дата', value: date === null ? 'Дата не выбрана' : formatDayTitle(date) },
+    {
+      label: 'Выбранное время',
+      value: slot === null ? 'Время не выбрано' : formatSlotRange(slot, timeZone),
+    },
     { label: 'Свободно', value: String(availableCount) },
-    { label: 'Длительность слота', value: formatSlotDuration() },
+    { label: 'Длительность слота', value: formatSlotDuration(durationMinutes) },
   ]
 
   return (

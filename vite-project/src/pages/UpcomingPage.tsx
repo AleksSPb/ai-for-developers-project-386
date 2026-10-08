@@ -3,22 +3,25 @@ import { useState } from 'react'
 
 import { useApp } from '../app/useApp'
 import type { Booking } from '../domain/booking'
-import { getBookingStart, isBookingUpcoming } from '../domain/schedule'
 import BookingCard from '../components/BookingCard'
 
-const byStart = (a: Booking, b: Booking): number =>
-  getBookingStart(a).getTime() - getBookingStart(b).getTime()
+const byStart = (a: Booking, b: Booking): number => a.start.getTime() - b.start.getTime()
+
+/**
+ * Список Броней.
+ *
+ * Предстоящей считается Бронь, которая ещё не началась: звонок, который уже идёт,
+ * не должен висеть в предстоящих, а граница здесь — начало Слота, а не конец.
+ */
+const isUpcoming = (booking: Booking, now: Date): boolean => booking.start.getTime() > now.getTime()
 
 const UpcomingPage = () => {
   const { bookings, now } = useApp()
   const [isPastOpen, setIsPastOpen] = useState(false)
 
-  const upcoming = bookings.filter((booking) => isBookingUpcoming(booking, now)).sort(byStart)
+  const upcoming = bookings.filter((booking) => isUpcoming(booking, now)).sort(byStart)
   // Прошедшие идут свежими сверху: за ними гость заглядывает чаще.
-  const past = bookings
-    .filter((booking) => !isBookingUpcoming(booking, now))
-    .sort(byStart)
-    .reverse()
+  const past = bookings.filter((booking) => !isUpcoming(booking, now)).sort(byStart).reverse()
 
   return (
     <Stack gap="lg">
