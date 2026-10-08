@@ -1,7 +1,7 @@
 import { MantineProvider } from '@mantine/core'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 
 import { server } from '../test/server'
@@ -47,7 +47,13 @@ const renderPage = () =>
 const ready = () => screen.findByRole('button', { name: 'Сохранить' })
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  vi.setSystemTime(new Date('2026-10-08T06:00:00.000Z'))
   server.use(withTypes(eventType()))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('страница Типов событий', () => {
@@ -165,6 +171,41 @@ describe('страница Типов событий', () => {
 
     // Оба поля подсвечены сразу, а не по одному за круг.
     expect(await screen.findAllByText('Значение не подходит')).toHaveLength(2)
+  })
+
+  it('число записавшихся кликабельно и ведёт на встречи этого Типа', async () => {
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([], { status: 200 })),
+      withTypes(eventType({ bookingCount: 41 })),
+    )
+    renderPage()
+    await ready()
+
+    // Владелец идёт по числу не за самим числом, а посмотреть, кто записался: без
+    // ссылки вопрос «а работает ли это» остался бы без ответа.
+    const link = screen.getByRole('link', { name: 'Записавшихся: 41' })
+
+    expect(link.getAttribute('href')).toBe('/meetings?eventType=consultation')
+  })
+
+  it('сторожа-таймера на странице Типов нет', async () => {
+    const asked = { bookings: 0 }
+    server.use(
+      http.get('/bookings', () => {
+        asked.bookings += 1
+        return HttpResponse.json([], { status: 200 })
+      }),
+    )
+    renderPage()
+    await ready()
+
+    // Свою правку Типа Владелец видит сразу, а встреча появляется от записи Гостя —
+    // она на странице встреч. Здесь таймер ходил бы по серверу без причины.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    expect(asked.bookings).toBe(0)
   })
 
   it('не грузит окна приёма', async () => {

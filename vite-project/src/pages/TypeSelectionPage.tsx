@@ -16,7 +16,9 @@ import SourceAlert from '../components/SourceAlert'
  * ответа, и совпадение текстов отправляло бы читателя на чужую страницу.
  */
 const TypeSelectionPage = () => {
-  const source = useEventTypes()
+  // Перечитывать источник здесь нечем: страница ничего не меняет, и сторож на ней
+  // только ходил бы по серверу без причины.
+  const { state: source } = useEventTypes()
 
   const header = <Title order={1}>Запись на звонок</Title>
 

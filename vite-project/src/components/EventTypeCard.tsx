@@ -2,6 +2,7 @@ import { Anchor, Card, Group, Stack, Text } from '@mantine/core'
 import { Link } from 'react-router'
 
 import { formatSlotDuration } from '../app/formatTime'
+import { meetingsPath } from '../app/meetingsFilter'
 import type { EventTypeSummary } from '../api/generated/calendar-api'
 
 /**
@@ -52,6 +53,12 @@ interface EventTypeCardProps {
  * Число записавшихся приходит с сервера и включает прошедшие: оно отвечает на
  * вопрос «а работает ли это». Вопрос «сколько у меня впереди» — на странице
  * встреч, и здесь он был бы вторым источником правды о числе.
+ *
+ * Число **кликабельно** и ведёт на встречи этого Типа: по вопросу «а работает
+ * ли это» Владелец почти всегда идёт посмотреть, кто именно записался. Адрес
+ * собирает общий модуль `meetingsFilter`, а не карточка: адрес фильтра должен
+ * совпадать у всех ссылок раздела, а собрать его здесь и там значило бы однажды
+ * получить два разных адреса для одного фильтра.
  */
 const EventTypeCard = ({ eventType, onRename, renaming = false }: EventTypeCardProps) => (
   <Card withBorder padding="lg" radius="md">
@@ -68,9 +75,15 @@ const EventTypeCard = ({ eventType, onRename, renaming = false }: EventTypeCardP
           <Text size="sm" c="dimmed">
             Длительность: {formatSlotDuration(eventType.durationMinutes)}
           </Text>
-          <Text size="sm" c="dimmed">
-            Записавшихся: {eventType.bookingCount}
-          </Text>
+          <Anchor
+            component={Link}
+            to={meetingsPath(eventType.id)}
+            size="sm"
+            c="dimmed"
+            title="Встречи этого типа события"
+          >
+            {`Записавшихся: ${eventType.bookingCount}`}
+          </Anchor>
         </Group>
         <GuestLink id={eventType.id} />
       </Stack>

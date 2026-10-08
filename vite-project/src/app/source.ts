@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 /**
  * Состояние одного источника данных.
@@ -30,6 +30,13 @@ export const fromResponse = <T>(
   return { kind: 'отказ', message: message ?? 'Сервис временно недоступен' }
 }
 
+/** Источник вместе с действием перечитывания. */
+export interface ReloadableSource<T> {
+  state: SourceState<T>
+  /** Перечитать источник: то, чем его обновляет пятиминутный сторож. */
+  reload: () => void
+}
+
 /** Первый непришедший источник из перечисленных — его и называют на экране. */
 export const firstMissing = (
   sources: Record<string, SourceState<unknown>>,
@@ -58,21 +65,31 @@ export const firstFailure = (
 }
 
 /**
- * Один источник данных с чтением при монтировании и по смене ключа.
+ * Один источник данных с чтением при монтировании, по смене ключа и по требованию.
  *
  * Состояние хранится вместе с ключом, а «загрузка» выводится из несовпадения
  * ключей, а не ставится эффектом: `setState` прямо в эффекте означал бы лишний
  * рендер на каждый запуск и запрещён правилом react-hooks.
  *
- * Чтение отменяется на размонтировании и при смене ключа: пришедший позже ответ
- * не должен перезаписать то, что уже показано, — иначе переход между страницами
- * показывал бы выдержку из прошлой страницы.
+ * Перечитывание **не** возвращает источник в состояние «загрузка»: иначе
+ * пятиминутный сторож стирал бы список встреч у Владельца каждые пять минут и
+ * мигал экраном вместо обновления. Прежние данные остаются, пока не пришёл новый
+ * ответ; пришедший отказ убирает их совсем.
+ *
+ * Чтение отменяется на размонтировании, при смене ключа и при новой выгрузке:
+ * пришедший позже ответ не должен перезаписать более свежий — иначе переход между
+ * страницами показывал бы выдержку из прошлой страницы.
+ *
+ * Читающая функция в зависимостях не указана намеренно: она должна быть одной и
+ * той же для всей жизни источника, иначе эффект перезапускался бы на каждом
+ * рендере. Все источники объявляют её на уровне модуля.
  */
 export const useSource = <T>(
   read: () => Promise<SourceState<T>>,
   key: string,
-): SourceState<T> => {
+): ReloadableSource<T> => {
   const [loaded, setLoaded] = useState<{ key: string; state: SourceState<T> } | null>(null)
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let isCurrent = true
@@ -87,7 +104,9 @@ export const useSource = <T>(
       isCurrent = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, version])
 
-  return loaded?.key === key ? loaded.state : { kind: 'загрузка' }
+  const reload = useCallback(() => setVersion((current) => current + 1), [])
+
+  return { state: loaded?.key === key ? loaded.state : { kind: 'загрузка' }, reload }
 }

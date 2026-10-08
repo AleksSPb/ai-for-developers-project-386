@@ -22,7 +22,9 @@ import SourceAlert from '../components/SourceAlert'
  * сеть просто не ответила.
  */
 const EventTypesPage = () => {
-  const source = useEventTypes()
+  // Сторожа здесь нет и не планируется: свою правку Типа Владелец видит сразу, а
+  // встреча появляется от записи Гостя — на странице встреч.
+  const { state: source } = useEventTypes()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formError, setFormError] = useState<Refusal | null>(null)
 
