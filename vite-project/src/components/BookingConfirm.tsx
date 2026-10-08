@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { Button, Card, Group, Stack, Text, TextInput } from '@mantine/core'
 
 import { useApp } from '../app/useApp'
-import type { GuestInput } from '../domain/booking'
 import { validateGuest } from '../domain/booking'
 import { formatSlotRange } from '../app/formatTime'
 import { formatDayTitle } from '../app/formatDate'
@@ -22,6 +21,9 @@ interface BookingConfirmProps {
  * Шаг подтверждения: поля Гостя живут здесь, а не в состоянии страницы.
  * На первом шаге их видеть нечем, а поднимать вверх без нужды значило бы
  * держать в памяти то, что никто не вводил.
+ *
+ * Конфликт до отправки не проверяется: за него отвечает сервер один раз. Форма
+ * проверяет только свои поля — пустое имя или почту сервер всё равно отвергнет.
  */
 const BookingConfirm = ({
   date,
@@ -32,24 +34,35 @@ const BookingConfirm = ({
   onDone,
 }: BookingConfirmProps) => {
   const { addBooking } = useApp()
-  const [guest, setGuest] = useState<GuestInput>({ name: '', email: '' })
+  const [guest, setGuest] = useState({ name: '', email: '' })
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState(false)
 
   // Ошибки показываются только после попытки подтверждения, иначе пустая форма
   // выглядит как заведомо неправильная.
   const errors = isSubmitted ? validateGuest(guest) : {}
 
-  const submit = () => {
+  const submit = async () => {
     setIsSubmitted(true)
-    const result = addBooking({ slot, eventTypeId, guest })
+    setError(null)
+
+    if (Object.keys(validateGuest(guest)).length > 0) {
+      return
+    }
+
+    setIsSending(true)
+    const result = await addBooking(slot, eventTypeId, guest)
+    setIsSending(false)
 
     if (result.ok) {
       onDone()
       return
     }
 
-    setError(result.error)
+    // Текст отказа — серверный: клиент не знает, чем именно занят Слот, и
+    // выдумывать причину значило бы врать.
+    setError(result.message ?? 'Не удалось записаться')
   }
 
   return (
@@ -92,7 +105,7 @@ const BookingConfirm = ({
         </Text>
       )}
 
-      <Button fullWidth mt="md" onClick={submit}>
+      <Button fullWidth mt="md" onClick={submit} loading={isSending}>
         Подтвердить запись
       </Button>
     </Card>

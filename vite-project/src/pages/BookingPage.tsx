@@ -16,6 +16,7 @@ import { getDateKey, getMonthKey, type DateKey, type MonthKey } from '../domain/
 import { getSlotStatus } from '../domain/day'
 import type { Slot } from '../domain/slots'
 import BookingConfirm from '../components/BookingConfirm'
+import BookingHeader from '../components/BookingHeader'
 import BookingSuccess from '../components/BookingSuccess'
 import CalendarGrid from '../components/CalendarGrid'
 import EventTypeFromUrlCard from '../components/EventTypeFromUrlCard'
@@ -69,6 +70,13 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
   const [month, setMonth] = useState<MonthKey | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [step, setStep] = useState<Step>('choose')
+  /**
+   * Слот, который только что подтвердили.
+   *
+   * Хранится отдельно от выбранного: на экране успеха нужен именно тот, на
+   * который гость подтвердил, а не «первый доступный» из текущего списка.
+   */
+  const [confirmedSlot, setConfirmedSlot] = useState<Slot | null>(null)
 
   // Оба источника пришли — и тогда из них собирается Правило расписания:
   // окна приёма и длительность Типа события. Мемоизировано, потому что от
@@ -80,6 +88,7 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
         ? {
             windows: sources.windows.value,
             durationMinutes: sources.eventType.value.durationMinutes,
+            eventType: sources.eventType.value,
           }
         : null,
     [sources.windows, sources.eventType],
@@ -160,7 +169,7 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
 
   return (
     <Stack gap="lg">
-      <Title order={1}>Запись на звонок</Title>
+      <BookingHeader name={ready.eventType.name} description={ready.eventType.description} />
       <Group align="stretch" gap="lg" wrap="wrap">
         <Card withBorder padding="lg" radius="md" style={{ width: 280, flex: '0 0 auto' }}>
           <InfoPanel
@@ -178,12 +187,18 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
             eventTypeId={eventTypeId}
             timeZone={timeZone}
             onEdit={() => setStep('choose')}
-            onDone={() => setStep('done')}
+            onDone={() => {
+              if (selectedSlot !== null) {
+                setConfirmedSlot(selectedSlot)
+              }
+              setStep('done')
+            }}
           />
         ) : (
           <>
-            {step === 'done' ? (
+            {step === 'done' && confirmedSlot !== null ? (
               <BookingSuccess
+                slot={confirmedSlot ?? selectedSlot}
                 onAgain={() => {
                   // Слот снимается вместе с успехом: он уже занят этой же Бронью,
                   // и «Продолжить» увело бы Гостя обратно на занятое время.

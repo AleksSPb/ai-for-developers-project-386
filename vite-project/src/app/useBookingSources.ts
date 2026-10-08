@@ -23,7 +23,7 @@ import type { SourceState } from './source'
  */
 export type EventTypeSource =
   | { kind: 'загрузка' }
-  | { kind: 'готов'; value: { id: string; durationMinutes: number } }
+  | { kind: 'готов'; value: { id: string; name: string; description: string; durationMinutes: number } }
   | { kind: 'нет типа' }
   | { kind: 'отказ'; message: string }
 
@@ -72,7 +72,12 @@ const readEventType = async (id: string): Promise<EventTypeSource> => {
   if (response.status === 200) {
     return {
       kind: 'готов',
-      value: { id: response.data.id, durationMinutes: response.data.durationMinutes },
+      value: {
+        id: response.data.id,
+        name: response.data.name,
+        description: response.data.description,
+        durationMinutes: response.data.durationMinutes,
+      },
     }
   }
 

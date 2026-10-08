@@ -1,11 +1,12 @@
 import { MantineProvider } from '@mantine/core'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppProvider } from '../app/AppProvider'
 import type { Booking } from '../domain/booking'
-import type { BookingStorage } from '../ports/storage'
+import { toApiBooking } from '../api/bookings'
 import { server } from '../test/server'
 import { stubEventTypeHandler, stubUnavailableHandler, stubWindowsHandler } from '../test/windowFixtures'
 import BookingPage from './BookingPage'
@@ -35,19 +36,14 @@ const tomorrowWindow = { start: '2026-10-09T06:00:00.000Z', end: '2026-10-09T15:
 /** Типовой набор источников: окно на сегодня и Тип события на 60 минут. */
 const withSources = () => server.use(stubWindowsHandler(window_), stubEventTypeHandler(60))
 
-const createMemoryStorage = (initial: readonly Booking[] = []): BookingStorage => {
-  const state = { bookings: [...initial] }
-  return {
-    read: () => [...state.bookings],
-    write: (bookings) => {
-      state.bookings = [...bookings]
-    },
-  }
-}
+const withBookings = (bookings: readonly Booking[] = []) =>
+  http.get('/bookings', () =>
+    HttpResponse.json(bookings.map(toApiBooking), { status: 200 }),
+  )
 
-const storageWith = (storage: BookingStorage) => (
+const storageWith = () => (
   <MantineProvider>
-    <AppProvider storage={storage}>
+    <AppProvider>
       <MemoryRouter>
         <BookingPage eventTypeId="consultation" />
       </MemoryRouter>
@@ -55,7 +51,10 @@ const storageWith = (storage: BookingStorage) => (
   </MantineProvider>
 )
 
-const renderPage = (bookings: readonly Booking[] = []) => render(storageWith(createMemoryStorage(bookings)))
+const renderPage = (bookings: readonly Booking[] = []) => {
+  server.use(withBookings(bookings))
+  return render(storageWith())
+}
 
 /**
  * Кнопка Слота в списке.
@@ -318,9 +317,25 @@ describe('подтверждение записи', () => {
     expect(screen.getByText('Введите почту в формате name@example.com')).toBeTruthy()
   })
 
-  it('сохраняет Бронь и показывает экран успеха', async () => {
-    const storage = createMemoryStorage()
-    render(storageWith(storage))
+  it('записывает Бронь на сервер и показывает экран успеха с интервалом', async () => {
+    let posted: unknown = null
+    const created = {
+      id: 'new',
+      eventTypeId: 'consultation',
+      timeRange: { start: `${TODAY}T07:00:00.000Z`, end: `${TODAY}T08:00:00.000Z` },
+      guestName: 'Demo User',
+      guestEmail: 'demo@example.com',
+      createdAt: NOW.toISOString(),
+    }
+    server.use(
+      http.post('/bookings', async ({ request }) => {
+        posted = await request.json()
+        return HttpResponse.json(created, { status: 201 })
+      }),
+      http.get('/bookings', () => HttpResponse.json([created], { status: 200 })),
+    )
+
+    renderPage()
     await awaitSources()
     await reachConfirmation()
 
@@ -328,17 +343,38 @@ describe('подтверждение записи', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'Demo@Example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
 
-    expect(screen.getByText('Бронь подтверждена. До встречи!')).toBeTruthy()
-    expect(storage.read()).toHaveLength(1)
-    expect(storage.read()[0]).toMatchObject({
+    expect(await screen.findByText('Бронь подтверждена. До встречи!')).toBeTruthy()
+    // Экран успеха показывает интервал, а не время создания и не «сохранено в
+    // браузере»: запись теперь на сервере, и это было бы ложью.
+    expect(screen.getByText(/8 октября 2026 г., 10:00 – 11:00/)).toBeTruthy()
+    expect(screen.queryByText(/Создано:/)).toBeNull()
+    expect(screen.queryByText(/браузер/i)).toBeNull()
+
+    // Запись ушла на сервер с интервалом и нормализованными полями.
+    expect(posted).toMatchObject({
       eventTypeId: 'consultation',
+      timeRange: { start: `${TODAY}T07:00:00.000Z`, end: `${TODAY}T08:00:00.000Z` },
       guestName: 'Demo User',
       guestEmail: 'demo@example.com',
     })
-    expect(storage.read()[0].start.toISOString()).toBe(`${TODAY}T07:00:00.000Z`)
   })
 
   it('возвращает к первому шагу с кнопки «Забронировать ещё»', async () => {
+    server.use(
+      http.post('/bookings', () =>
+        HttpResponse.json(
+          {
+            id: 'new',
+            eventTypeId: 'consultation',
+            timeRange: { start: `${TODAY}T07:00:00.000Z`, end: `${TODAY}T08:00:00.000Z` },
+            guestName: 'Demo User',
+            guestEmail: 'demo@example.com',
+            createdAt: NOW.toISOString(),
+          },
+          { status: 201 },
+        ),
+      ),
+    )
     renderPage()
     await awaitSources()
     await reachConfirmation()
@@ -346,6 +382,10 @@ describe('подтверждение записи', () => {
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+
+    // Экран успеха приходит ответом сервера, поэтому дожидаемся его: без этого
+    // клик был бы по ещё не появившейся кнопке.
+    await screen.findByText('Бронь подтверждена. До встречи!')
     fireEvent.click(screen.getByRole('button', { name: 'Забронировать ещё' }))
 
     expect(screen.getByText('Статус слотов')).toBeTruthy()
@@ -365,23 +405,24 @@ describe('подтверждение записи', () => {
     expect(screen.getByLabelText('Имя')).toHaveProperty('value', '')
   })
 
-  it('отказывает, если Слот прошёл, пока гость вводил почту', async () => {
-    const storage = createMemoryStorage()
-    render(storageWith(storage))
+  it('показывает отказ сервера и не показывает экран успеха', async () => {
+    // Клиент больше не решает, занят Слот или нет: за конфликт отвечает сервер, и
+    // текст отказа его, а не придуманный на клиенте.
+    server.use(
+      http.post('/bookings', () =>
+        HttpResponse.json({ code: 'slot_taken', message: 'Слот уже занят' }, { status: 409 }),
+      ),
+    )
+
+    renderPage()
     await awaitSources()
     await reachConfirmation()
 
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
-
-    // Гость начал в 09:00, а подтвердил в 12:00: Слот 10:00 уже прошёл.
-    act(() => {
-      vi.advanceTimersByTime(3 * 60 * 60_000)
-    })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
 
-    expect(screen.getByText('Это время уже занято или прошло')).toBeTruthy()
+    expect(await screen.findByText('Слот уже занят')).toBeTruthy()
     expect(screen.queryByText('Бронь подтверждена. До встречи!')).toBeNull()
-    expect(storage.read()).toHaveLength(0)
   })
 })
