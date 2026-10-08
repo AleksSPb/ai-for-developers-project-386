@@ -1,80 +1,58 @@
-import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 
-import type { Booking } from '../domain/booking'
-import { normalizeGuest, validateGuest } from '../domain/booking'
-import { intervalsOverlap } from '../domain/range'
-import { getSlotStatus } from '../domain/day'
-import type { BookingStorage } from '../ports/storage'
-import { AppContext, type AddBookingInput, type AddBookingResult } from './appContext'
+import { validateGuest } from '../domain/booking'
+import { useBookings, type CreateResult } from '../app/useBookings'
 import { useNow } from './useNow'
+import { AppContext } from './appContext'
 
-type AppAction = { type: 'bookings/add'; booking: Booking }
-
-const initialState = (storage: BookingStorage): readonly Booking[] => storage.read()
-
-const reducer = (state: readonly Booking[], action: AppAction): readonly Booking[] => {
-  if (action.type !== 'bookings/add') {
-    return state
-  }
-
-  const { booking } = action
-  // Проверка конфликта в самом редьюсере: правило одно, и оно не должно
-  // зависеть от того, нажал Гость кнопку или нет.
-  const isTaken = state.some((existing) => intervalsOverlap(existing, booking))
-
-  return isTaken ? state : [...state, booking]
-}
-
+/**
+ * Состояние приложения.
+ *
+ * Брони живут на сервере: провайдер читает их списком и создаёт запросом.
+ * Проверки конфликта на клиенте нет **намеренно** — за конфликт отвечает сервер
+ * один раз, при создании. Проверка на клиенте была бы второй правдой о том же
+ * факте и успела бы состариться: между проверкой и отправкой слот мог занять
+ * другой гость.
+ */
 export interface AppProviderProps {
-  /** Порт хранилища: в приложении реализация на `localStorage`, в тестах — заглушка. */
-  storage: BookingStorage
   children: ReactNode
 }
 
-/**
- * Порт передаётся пропсом, а не подставляется внутри: так тест выбирает
- * хранилище, не трогая браузерное состояние.
- */
-export const AppProvider = ({ storage, children }: AppProviderProps) => {
-  const [bookings, dispatch] = useReducer(reducer, undefined, () => initialState(storage))
+export const AppProvider = ({ children }: AppProviderProps) => {
+  const { state, create } = useBookings()
   const now = useNow()
 
-  useEffect(() => {
-    storage.write(bookings)
-  }, [storage, bookings])
-
+  /**
+   * Забронировать Слот.
+   *
+   * Единственная проверка перед отправкой — форма Гостя: пустое имя или почту
+   * сервер тоже отвергнет, но ждать ответа ради заведомо плохих данных незачем.
+   */
   const addBooking = useCallback(
-    ({ slot, eventTypeId, guest }: AddBookingInput): AddBookingResult => {
-      if (getSlotStatus(slot, bookings, now) !== 'свободен') {
-        return { ok: false, error: 'Это время уже занято или прошло' }
+    async (
+      slot: Parameters<typeof create>[0],
+      eventTypeId: string,
+      guest: { name: string; email: string },
+    ): Promise<CreateResult> => {
+      const errors = validateGuest(guest)
+
+      if (Object.keys(errors).length > 0) {
+        return { ok: false, message: 'Проверьте имя и почту' }
       }
 
-      if (Object.keys(validateGuest(guest)).length > 0) {
-        return { ok: false, error: 'Проверьте имя и почту' }
-      }
-
-      const person = normalizeGuest(guest)
-      dispatch({
-        type: 'bookings/add',
-        booking: {
-          id: crypto.randomUUID(),
-          eventTypeId,
-          start: slot.start,
-          end: slot.end,
-          guestName: person.name,
-          guestEmail: person.email,
-          createdAt: now.toISOString(),
-        },
-      })
-
-      return { ok: true }
+      return create(slot, eventTypeId, guest)
     },
-    [bookings, now],
+    [create],
   )
 
   const value = useMemo(
-    () => ({ bookings, now, addBooking }),
-    [bookings, now, addBooking],
+    () => ({
+      bookingsState: state,
+      bookings: state.kind === 'готов' ? state.value : [],
+      now,
+      addBooking,
+    }),
+    [state, now, addBooking],
   )
 
   return <AppContext value={value}>{children}</AppContext>

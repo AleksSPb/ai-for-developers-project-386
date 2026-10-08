@@ -18,12 +18,14 @@ export interface TimeRange {
  * по моментам, а не по ключам дня: бронь соседнего дня не может пересечься с
  * Слотом просто потому, что оказалась в другой строке таблицы.
  */
+/**
+ * Пересекаются ли два отрезка.
+ *
+ * Функции «есть ли конфликт» больше нет: за конфликт отвечает сервер, и вторая
+ * проверка на клиенте была бы второй правдой о том же факте. Осталась одна.
+ */
 export const intervalsOverlap = (a: TimeRange, b: TimeRange): boolean =>
   a.start.getTime() < b.end.getTime() && b.start.getTime() < a.end.getTime()
-
-/** Есть ли среди интервалов пересекающийся с данным. */
-export const hasConflict = (candidate: TimeRange, others: readonly TimeRange[]): boolean =>
-  others.some((other) => intervalsOverlap(candidate, other))
 
 export const isEmptyRange = (range: TimeRange): boolean =>
   range.end.getTime() <= range.start.getTime()

@@ -5,7 +5,6 @@ import { HashRouter } from 'react-router'
 import '@mantine/core/styles.css'
 import './index.css'
 import { AppProvider } from './app/AppProvider'
-import { createBookingStorage } from './ports/storage'
 import { usesStubs } from './api/config'
 import App from './App.tsx'
 
@@ -35,9 +34,7 @@ const start = async () => {
             статической раздаче без серверного fallback, а ссылку можно
             отправить Гостю в чат целиком. */}
         <HashRouter>
-          {/* Хранилище создаётся один раз: иначе каждое состояние компонента
-              читало бы его заново и получало пустые Брони. */}
-          <AppProvider storage={createBookingStorage()}>
+            <AppProvider>
             <App />
           </AppProvider>
         </HashRouter>

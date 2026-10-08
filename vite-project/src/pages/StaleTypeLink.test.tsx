@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { AppProvider } from '../app/AppProvider'
 import { server } from '../test/server'
-import type { BookingStorage } from '../ports/storage'
 import BookingPage from '../pages/BookingPage'
 import TypeSelectionPage from './TypeSelectionPage'
 
@@ -17,8 +16,6 @@ import TypeSelectionPage from './TypeSelectionPage'
  * записи с пустым набором Слотов значило бы показать интерфейс, который не может
  * предложить ничего, — и молчал бы, будто записаться нельзя нигде.
  */
-
-const storage: BookingStorage = { read: () => [], write: () => {} }
 
 const eventType = {
   id: 'consultation',
@@ -54,10 +51,21 @@ const withTypeList = (...types: unknown[]) =>
   http.get('/event-types', () => HttpResponse.json({ types }, { status: 200 }))
 
 /** Маршруты как в приложении: без них проверить «ведёт к выбору» нельзя. */
+/**
+ * Ожидание страницы выбора.
+ *
+ * Таймаут поднят намеренно: к моменту перехода успевают пройти два запроса —
+ * одиночное чтение Типа (оно и даёт 404) и список для самой страницы выбора.
+ * Под нагрузкой параллельных прогонов стандартной секунды не хватало, и тест
+ * мигал, хотя логика была верной.
+ */
+const findSelection = () =>
+  screen.findByRole('heading', { name: 'На что записаться?' }, { timeout: 5000 })
+
 const renderAt = (path: string) =>
   render(
     <MantineProvider>
-      <AppProvider storage={storage}>
+      <AppProvider>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/book" element={<TypeSelectionPage />} />
@@ -77,7 +85,7 @@ describe('устаревшая ссылка', () => {
     server.use(withType(404), withTypeList(eventType))
     renderAt('/book/consultation')
 
-    expect(await screen.findByRole('heading', { name: 'На что записаться?' })).toBeTruthy()
+    expect(await findSelection()).toBeTruthy()
     // Главное: календаря на устаревшей ссылке нет вообще.
     expect(screen.queryByText('Календарь')).toBeNull()
     expect(screen.queryByText('Статус слотов')).toBeNull()
@@ -86,7 +94,7 @@ describe('устаревшая ссылка', () => {
   it('не показывает ошибку про ссылку и не красную плашку', async () => {
     server.use(withType(404), withTypeList(eventType))
     renderAt('/book/consultation')
-    await screen.findByRole('heading', { name: 'На что записаться?' })
+    await findSelection()
 
     expect(screen.queryByText('Не удалось загрузить расписание')).toBeNull()
     expect(screen.queryByText('Тип события не найден')).toBeNull()

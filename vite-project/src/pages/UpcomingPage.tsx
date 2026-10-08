@@ -1,34 +1,61 @@
 import { Button, Stack, Text, Title } from '@mantine/core'
 import { useState } from 'react'
+import { Link } from 'react-router'
 
 import { useApp } from '../app/useApp'
-import type { Booking } from '../domain/booking'
 import BookingCard from '../components/BookingCard'
+import SourceAlert from '../components/SourceAlert'
 
-const byStart = (a: Booking, b: Booking): number => a.start.getTime() - b.start.getTime()
+const byStart = (a: { start: Date }, b: { start: Date }): number => a.start.getTime() - b.start.getTime()
 
 /**
- * Список Броней.
- *
  * Предстоящей считается Бронь, которая ещё не началась: звонок, который уже идёт,
  * не должен висеть в предстоящих, а граница здесь — начало Слота, а не конец.
  */
-const isUpcoming = (booking: Booking, now: Date): boolean => booking.start.getTime() > now.getTime()
+const isUpcoming = (start: Date, now: Date): boolean => start.getTime() > now.getTime()
 
+/**
+ * Список Броней гостя.
+ *
+ * Брони приходят с сервера, и **отказ отличен от пустого состояния**: «Записей
+ * пока нет» — это про данные, а отказ — про то, что данных не узнали. Подменить
+ * одно другим нельзя: гость увидел бы «у вас нет записей» вместо «мы не смогли их
+ * принести» и решил бы, что его запись потерялась.
+ */
 const UpcomingPage = () => {
-  const { bookings, now } = useApp()
+  const { bookings, bookingsState, now } = useApp()
   const [isPastOpen, setIsPastOpen] = useState(false)
 
-  const upcoming = bookings.filter((booking) => isUpcoming(booking, now)).sort(byStart)
+  const header = <Title order={1}>Брони</Title>
+
+  if (bookingsState.kind === 'отказ') {
+    return (
+      <Stack gap="lg">
+        {header}
+        <SourceAlert message={bookingsState.message} />
+      </Stack>
+    )
+  }
+
+  if (bookingsState.kind === 'загрузка') {
+    return (
+      <Stack gap="lg">
+        {header}
+        <Text c="dimmed">Загружаем записи…</Text>
+      </Stack>
+    )
+  }
+
+  const upcoming = bookings.filter((booking) => isUpcoming(booking.start, now)).sort(byStart)
   // Прошедшие идут свежими сверху: за ними гость заглядывает чаще.
-  const past = bookings.filter((booking) => !isUpcoming(booking, now)).sort(byStart).reverse()
+  const past = bookings.filter((booking) => !isUpcoming(booking.start, now)).sort(byStart).reverse()
 
   return (
     <Stack gap="lg">
-      <Title order={1}>Брони</Title>
-      {/* Ограничение из ADR-0002 объявляется прямо, а не остаётся на discovery. */}
-      <Text size="sm" c="dimmed">
-        Записи, сохранённые в этом браузере.
+      {header}
+
+      <Text component={Link} to="/book" size="sm">
+        Записаться ещё
       </Text>
 
       {bookings.length === 0 ? (

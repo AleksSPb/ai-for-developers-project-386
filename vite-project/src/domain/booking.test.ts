@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { normalizeGuest, validateGuest, type Booking } from './booking'
-import { hasConflict, intervalsOverlap, type TimeRange } from './range'
+import { intervalsOverlap, type TimeRange } from './range'
 
 /**
  * Интервалы — парами моментов.
@@ -56,22 +56,11 @@ describe('intervalsOverlap', () => {
     })
 
     expect(
-      hasConflict(range('2026-10-09T00:00:00.000Z', '2026-10-09T01:00:00.000Z'), [overnight]),
+      intervalsOverlap(
+        range('2026-10-09T00:00:00.000Z', '2026-10-09T01:00:00.000Z'),
+        overnight,
+      ),
     ).toBe(true)
-  })
-})
-
-describe('hasConflict', () => {
-  it('находит пересечение среди Броней', () => {
-    expect(hasConflict(range('2026-10-08T06:15:00.000Z', '2026-10-08T06:45:00.000Z'), [booking()])).toBe(true)
-  })
-
-  it('не находит пересечения, когда интервалы соседствуют', () => {
-    expect(hasConflict(range('2026-10-08T06:30:00.000Z', '2026-10-08T07:00:00.000Z'), [booking()])).toBe(false)
-  })
-
-  it('пустой список не создаёт конфликта', () => {
-    expect(hasConflict(range('2026-10-08T06:00:00.000Z', '2026-10-08T06:30:00.000Z'), [])).toBe(false)
   })
 })
 

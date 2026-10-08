@@ -6,11 +6,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { server } from './test/server'
 import { AppProvider } from './app/AppProvider'
-import type { BookingStorage } from './ports/storage'
 import App from './App'
 
-/** Хранилище-заглушка: гостевой странице провайдер нужен, данные тут ни при чём. */
-const storage: BookingStorage = { read: () => [], write: () => {} }
 
 /**
  * Раздел Владельца разведён с гостевой частью по адресам.
@@ -32,7 +29,7 @@ const withSources = () => {
 const renderAt = (path: string) =>
   render(
     <MantineProvider>
-      <AppProvider storage={storage}>
+      <AppProvider>
         <MemoryRouter initialEntries={[path]}>
           <App />
         </MemoryRouter>

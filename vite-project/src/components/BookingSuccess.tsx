@@ -1,20 +1,41 @@
 import { Button, Card, Stack, Text, Title } from '@mantine/core'
 
+import { formatDayWithYear } from '../app/formatDate'
+import { formatSlotRange } from '../app/formatTime'
+import { getGuestTimeZone } from '../app/formatTimeZone'
+import { getDateKey } from '../domain/calendar'
+import type { Slot } from '../domain/slots'
+
 interface BookingSuccessProps {
-  /** Возврат к первому шагу: дата сохраняется, Слот сбрасывается. */
+  slot: Slot
+  /** Возврат к первому шагу: день сохраняется, Слот сбрасывается. */
   onAgain: () => void
 }
 
-const BookingSuccess = ({ onAgain }: BookingSuccessProps) => (
-  <Card withBorder padding="lg" radius="md" style={{ flex: 1, minWidth: 320 }}>
-    <Stack gap="md">
-      <Title order={3}>Бронь подтверждена. До встречи!</Title>
-      <Text size="sm" c="dimmed">
-        Запись сохранена в этом браузере.
-      </Text>
-      <Button onClick={onAgain}>Забронировать ещё</Button>
-    </Stack>
-  </Card>
-)
+/**
+ * Экран подтверждения.
+ *
+ * Показывает **интервал** и ничего больше: ни времени создания, ни упоминания
+ * того, где сохранена запись. «Сохранено в этом браузере» было правдой для старого
+ * хранилища и стало бы ложью после перехода на сервер, а время создания — это
+ * про сервер, а не про гостя.
+ */
+const BookingSuccess = ({ slot, onAgain }: BookingSuccessProps) => {
+  const timeZone = getGuestTimeZone()
+
+  return (
+    <Card withBorder padding="lg" radius="md" style={{ flex: 1, minWidth: 320 }}>
+      <Stack gap="md">
+        <Title order={3}>Бронь подтверждена. До встречи!</Title>
+
+        <Text size="sm">
+          {`${formatDayWithYear(getDateKey(slot.start, timeZone))}, ${formatSlotRange(slot, timeZone)}`}
+        </Text>
+
+        <Button onClick={onAgain}>Забронировать ещё</Button>
+      </Stack>
+    </Card>
+  )
+}
 
 export default BookingSuccess

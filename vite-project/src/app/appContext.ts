@@ -1,27 +1,25 @@
 import { createContext } from 'react'
-import type { Booking, GuestInput } from '../domain/booking'
+import type { Booking } from '../domain/booking'
 import type { Slot } from '../domain/slots'
-
-/**
- * Состояние приложения.
- *
- * Брони лежат здесь по-прежнему, но интервал у них теперь пара моментов, а
- * длительность Слота задаёт Тип события, а не константа кода.
- */
-
-export interface AddBookingInput {
-  slot: Slot
-  eventTypeId: string
-  guest: GuestInput
-}
-
-export type AddBookingResult = { ok: true } | { ok: false; error: string }
+import type { BookingsState, CreateResult } from './useBookings'
 
 export interface AppContextValue {
+  /**
+   * Состояние списка Броней.
+   *
+   * Отдаётся вместе с самими Бронями не из удобства, а чтобы страница могла
+   * отличить «записей нет» от «список не пришёл». Показывать при отказе пустое
+   * состояние — значило бы сказать гостю, что записей нет, хотя сеть не ответила.
+   */
+  bookingsState: BookingsState
   bookings: readonly Booking[]
   /** Момент, на который считается занятость Слотов. */
   now: Date
-  addBooking: (input: AddBookingInput) => AddBookingResult
+  addBooking: (
+    slot: Slot,
+    eventTypeId: string,
+    guest: { name: string; email: string },
+  ) => Promise<CreateResult>
 }
 
 /**
