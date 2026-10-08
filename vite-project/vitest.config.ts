@@ -22,5 +22,8 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/test/setup.ts'],
+    // Клиент генерируется до тестов: он не коммитится, и свежий клон иначе
+    // падал бы на неразрешённом импорте — см. testGlobalSetup.ts.
+    globalSetup: ['./testGlobalSetup.ts'],
   },
 })
