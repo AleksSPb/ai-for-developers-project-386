@@ -7,22 +7,27 @@ import type { Booking } from '../domain/booking'
 import type { BookingStorage } from '../ports/storage'
 import UpcomingPage from './UpcomingPage'
 
-/** 09:00 по Москве 28 марта: слот 10:00 впереди, слот 08:30 позади. */
-const NOW = new Date('2026-03-28T06:00:00.000Z')
+/** 09:00 по Москве 8 октября: слот 10:00 впереди, слот 08:30 позади. */
+const NOW = new Date('2026-10-08T06:00:00.000Z')
+
+/** Слот получасовой длительности от момента в UTC. */
+const slotAt = (startIso: string): { start: Date; end: Date } => ({
+  start: new Date(startIso),
+  end: new Date(new Date(startIso).getTime() + 30 * 60_000),
+})
 
 const booking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'b1',
-  date: '2026-03-28',
-  startMinutes: 600,
-  endMinutes: 630,
+  eventTypeId: 'consultation',
+  ...slotAt('2026-10-08T07:00:00.000Z'),
   guestName: 'Demo User',
   guestEmail: 'demo@example.com',
-  createdAt: '2026-03-27T11:40:00.000Z',
+  createdAt: '2026-10-07T11:40:00.000Z',
   ...overrides,
 })
 
 const pastBooking = (overrides: Partial<Booking> = {}): Booking =>
-  booking({ id: 'past', startMinutes: 510, endMinutes: 540, ...overrides })
+  booking({ id: 'past', ...slotAt('2026-10-08T05:30:00.000Z'), ...overrides })
 
 const renderPage = (bookings: readonly Booking[] = []) => {
   const storage: BookingStorage = { read: () => [...bookings], write: () => {} }
@@ -69,24 +74,24 @@ describe('список Броней', () => {
     renderPage([booking({ id: 'b2', guestName: 'Иван', guestEmail: 'ivan@example.com' })])
     expect(screen.getByText('Иван')).toBeTruthy()
     expect(screen.getByText('ivan@example.com')).toBeTruthy()
-    expect(screen.getByText('Слот: 28 марта 2026 г., 10:00 - 10:30')).toBeTruthy()
-    expect(screen.getByText('Создано: 27.03.2026, 14:40')).toBeTruthy()
+    expect(screen.getByText('Слот: 8 октября 2026 г., 10:00 – 10:30')).toBeTruthy()
+    expect(screen.getByText('Создано: 14:40')).toBeTruthy()
   })
 
   it('прячет прошедшие Брони и показывает их по кнопке', () => {
     renderPage([pastBooking()])
     expect(toggle().textContent).toBe('Показать прошедшие (1)')
-    expect(screen.queryByText('Слот: 28 марта 2026 г., 08:30 - 09:00')).toBeNull()
+    expect(screen.queryByText('Слот: 8 октября 2026 г., 08:30 – 09:00')).toBeNull()
 
     fireEvent.click(toggle())
-    expect(screen.getByText('Слот: 28 марта 2026 г., 08:30 - 09:00')).toBeTruthy()
+    expect(screen.getByText('Слот: 8 октября 2026 г., 08:30 – 09:00')).toBeTruthy()
   })
 
   it('сворачивает прошедшие обратно', () => {
     renderPage([pastBooking()])
     fireEvent.click(toggle())
     fireEvent.click(screen.getByText('Скрыть прошедшие'))
-    expect(screen.queryByText('Слот: 28 марта 2026 г., 08:30 - 09:00')).toBeNull()
+    expect(screen.queryByText('Слот: 8 октября 2026 г., 08:30 – 09:00')).toBeNull()
   })
 
   it('не показывает кнопку прошедших, если прошедших нет', () => {
@@ -96,13 +101,14 @@ describe('список Броней', () => {
 
   it('сортирует предстоящие по времени Слота', () => {
     renderPage([
-      booking({ id: 'late', startMinutes: 660, endMinutes: 690 }),
-      booking({ id: 'soon', startMinutes: 600, endMinutes: 630 }),
+      // 08:00 UTC — 11:00 по Москве, то есть более поздняя Бронь.
+      booking({ id: 'late', ...slotAt('2026-10-08T08:00:00.000Z') }),
+      booking({ id: 'soon', ...slotAt('2026-10-08T07:00:00.000Z') }),
     ])
     const slots = screen.getAllByText(/^Слот: /).map((node) => node.textContent)
     expect(slots).toEqual([
-      'Слот: 28 марта 2026 г., 10:00 - 10:30',
-      'Слот: 28 марта 2026 г., 11:00 - 11:30',
+      'Слот: 8 октября 2026 г., 10:00 – 10:30',
+      'Слот: 8 октября 2026 г., 11:00 – 11:30',
     ])
   })
 
@@ -113,14 +119,15 @@ describe('список Броней', () => {
 
   it('показывает прошедшие свежими сверху', () => {
     renderPage([
-      pastBooking({ id: 'old', startMinutes: 480, endMinutes: 510 }),
+      // 04:00 UTC — это 07:00 по Москве, то есть более ранняя Бронь.
+      pastBooking({ id: 'old', ...slotAt('2026-10-08T04:00:00.000Z') }),
       pastBooking({ id: 'recent' }),
     ])
     fireEvent.click(toggle())
     const slots = screen.getAllByText(/^Слот: /).map((node) => node.textContent)
     expect(slots).toEqual([
-      'Слот: 28 марта 2026 г., 08:30 - 09:00',
-      'Слот: 28 марта 2026 г., 08:00 - 08:30',
+      'Слот: 8 октября 2026 г., 08:30 – 09:00',
+      'Слот: 8 октября 2026 г., 07:00 – 07:30',
     ])
   })
 })

@@ -1,85 +1,96 @@
-import { ActionIcon, Box, Group, SimpleGrid, Stack, Text, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Box, Group, SimpleGrid, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react'
-import { useMemo } from 'react'
 
-import { formatMonthTitle, formatSlotCount, weekdayHeaders } from '../app/format'
-import type { Booking } from '../domain/booking'
-import {
-  getAvailableSlotCount,
-  getMonthCells,
-  isDateSelectable,
-  isMonthSelectable,
-  shiftMonth,
-  type DateKey,
-  type MonthKey,
-} from '../domain/schedule'
+import { formatSlotCount } from '../app/formatTime'
+import { getDayNumber, type DateKey, type MonthKey } from '../domain/calendar'
+import { dayStateHint, type DayState } from '../domain/day'
+import { getMonthCells, getMonthTitleRange } from '../domain/month'
+import type { DayCell } from '../app/calendarView'
 
-interface CalendarGridProps {
-  month: MonthKey
-  onMonthChange: (month: MonthKey) => void
-  selectedDate: DateKey
-  onSelectDate: (date: DateKey) => void
-  bookings: readonly Booking[]
-  now: Date
-}
+const weekdayHeaders = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] as const
 
-interface DayCellProps {
-  date: DateKey
+interface DayButtonProps {
+  cell: DayCell
   selected: boolean
-  availableCount: number
-  selectable: boolean
   onSelect: (date: DateKey) => void
 }
 
-const DayCell = ({ date, selected, availableCount, selectable, onSelect }: DayCellProps) => (
-  <UnstyledButton
-    onClick={() => onSelect(date)}
-    disabled={!selectable}
-    aria-pressed={selected}
-    style={{
-      padding: '6px 4px',
-      borderRadius: 6,
-      border: selected ? '1px solid var(--mantine-color-orange-6)' : '1px solid transparent',
-      background: selected ? 'var(--mantine-color-orange-0)' : undefined,
-      cursor: selectable ? 'pointer' : 'default',
-      opacity: selectable ? 1 : 0.4,
-    }}
-  >
-    <Text size="sm" ta="center">
-      {Number(date.slice(8))}
-    </Text>
-    {selectable && availableCount > 0 && (
-      <Text size="xs" c="dimmed" ta="center">
-        {formatSlotCount(availableCount)}
-      </Text>
-    )}
-  </UnstyledButton>
-)
+/**
+ * Ячейка дня.
+ *
+ * Гаснущий день **не показывает числа свободных Слотов**: подпись отвергается
+ * вместе с ценой, иначе приглушённое число спорило бы с заголовком. Различие
+ * четырёх состояний несут подсказки — в самой ячейке состояния неразличимы, и
+ * это осознанно: ячейка одна и гаснет одна.
+ */
+const DayButton = ({ cell, selected, onSelect }: DayButtonProps) => {
+  const selectable = cell.state.kind === 'доступен'
+  const hint = dayStateHint(cell.state)
+  const day = getDayNumber(cell.date)
 
+  const button = (
+    <UnstyledButton
+      onClick={() => onSelect(cell.date)}
+      disabled={!selectable}
+      aria-pressed={selected}
+      style={{
+        width: '100%',
+        padding: '6px 4px',
+        borderRadius: 6,
+        border: selected ? '1px solid var(--mantine-color-orange-6)' : '1px solid transparent',
+        background: selected ? 'var(--mantine-color-orange-0)' : undefined,
+        cursor: selectable ? 'pointer' : 'default',
+        opacity: selectable ? 1 : 0.4,
+      }}
+    >
+      <Text size="sm" ta="center">
+        {day}
+      </Text>
+      {selectable && (
+        <Text size="xs" c="dimmed" ta="center">
+          {formatSlotCount((cell.state as { available: number }).available)}
+        </Text>
+      )}
+    </UnstyledButton>
+  )
+
+  // Подсказка одна на состояние дня, а не на каждый Слот: четыре причины должны
+  // читаться разными словами, иначе они и не различимы.
+  return hint === null ? button : <Tooltip label={hint}>{button}</Tooltip>
+}
+
+interface CalendarGridProps {
+  month: MonthKey
+  months: MonthKey[]
+  onMonthChange: (month: MonthKey) => void
+  selectedDate: DateKey | null
+  onSelectDate: (date: DateKey) => void
+  cells: Record<DateKey, DayCell>
+  first: DateKey
+  last: DateKey
+}
+
+/**
+ * Календарь на месяц, собранный из Окон приёма.
+ *
+ * Месяц обрезан с двух сторон: слева до сегодня, справа до последнего дня со
+ * Слотом. Обрезанные места закрыты заглушками без чисел — приглушённая дата
+ * спорила бы с заголовком, а клик по ней ничего бы не дал.
+ */
 const CalendarGrid = ({
   month,
+  months,
   onMonthChange,
   selectedDate,
   onSelectDate,
-  bookings,
-  now,
+  cells,
+  first,
+  last,
 }: CalendarGridProps) => {
-  const cells = getMonthCells(month)
-
-  // Считаем один раз на месяц: пересчёт каждой ячейки при каждом рендере
-  // стоил бы сотни преобразований времени.
-  const availableCounts = useMemo(() => {
-    const counts = new Map<DateKey, number>()
-    cells.forEach((cell) => {
-      if (cell !== null) {
-        counts.set(cell, getAvailableSlotCount(cell, bookings, now))
-      }
-    })
-    return counts
-  }, [cells, bookings, now])
-
-  const canGoBack = isMonthSelectable(shiftMonth(month, -1), now)
-  const canGoForward = isMonthSelectable(shiftMonth(month, 1), now)
+  const grid = getMonthCells(month, first, last)
+  const position = months.indexOf(month)
+  const canGoBack = position > 0
+  const canGoForward = position >= 0 && position < months.length - 1
 
   return (
     <Stack gap="xs">
@@ -89,7 +100,7 @@ const CalendarGrid = ({
           <ActionIcon
             variant="default"
             disabled={!canGoBack}
-            onClick={() => onMonthChange(shiftMonth(month, -1))}
+            onClick={() => onMonthChange(months[position - 1])}
             aria-label="Предыдущий месяц"
           >
             <IconChevronLeft size={16} />
@@ -97,7 +108,7 @@ const CalendarGrid = ({
           <ActionIcon
             variant="default"
             disabled={!canGoForward}
-            onClick={() => onMonthChange(shiftMonth(month, 1))}
+            onClick={() => onMonthChange(months[position + 1])}
             aria-label="Следующий месяц"
           >
             <IconChevronRight size={16} />
@@ -105,7 +116,7 @@ const CalendarGrid = ({
         </Group>
       </Group>
 
-      <Text>{formatMonthTitle(month)}</Text>
+      <Text>{getMonthTitleRange(first, last, month)}</Text>
 
       <SimpleGrid cols={7} spacing={4}>
         {weekdayHeaders.map((header) => (
@@ -113,24 +124,30 @@ const CalendarGrid = ({
             {header}
           </Text>
         ))}
-        {cells.map((cell, index) =>
-          cell === null ? (
-            // Ключ по индексу: пустые ячейки не несут данных и не меняются местами.
-            <Box key={`empty-${index}`} />
+        {grid.map((cell, index) => {
+          if (cell === null) {
+            // Заглушка: места до 1-го числа и после последнего дня со Слотом.
+            // Чисел здесь нет намеренно — см. комментарий к компоненту.
+            return <Box key={`empty-${index}`} />
+          }
+
+          const dayCell = cells[cell]
+
+          return dayCell === undefined ? (
+            <Box key={cell} />
           ) : (
-            <DayCell
+            <DayButton
               key={cell}
-              date={cell}
+              cell={dayCell}
               selected={cell === selectedDate}
-              availableCount={availableCounts.get(cell) ?? 0}
-              selectable={isDateSelectable(cell, now)}
               onSelect={onSelectDate}
             />
-          ),
-        )}
+          )
+        })}
       </SimpleGrid>
     </Stack>
   )
 }
 
 export default CalendarGrid
+export type { DayState }

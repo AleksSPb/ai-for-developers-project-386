@@ -5,12 +5,12 @@ import { bookingsStorageKey, createBookingStorage } from './storage'
 
 const booking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'b1',
-  date: '2026-03-28',
-  startMinutes: 540,
-  endMinutes: 570,
+  eventTypeId: 'consultation',
+  start: new Date('2026-10-08T06:00:00.000Z'),
+  end: new Date('2026-10-08T06:30:00.000Z'),
   guestName: 'Demo User',
   guestEmail: 'demo@example.com',
-  createdAt: '2026-03-27T14:40:00.000Z',
+  createdAt: '2026-10-07T14:40:00.000Z',
   ...overrides,
 })
 
@@ -28,6 +28,18 @@ describe('createBookingStorage', () => {
     const storage = createBookingStorage()
     storage.write([booking()])
     expect(storage.read()).toEqual([booking()])
+  })
+
+  it('моменты переживают JSON туда и обратно', () => {
+    // `Date` не сериализуется сам, а приводить его к строке полем `toJSON`
+    // значило бы тащить `Date` в домен. Проверяем, что на диске лежит ISO и
+    // читается обратно в момент, а не в строку.
+    const storage = createBookingStorage()
+    storage.write([booking()])
+    const raw = window.localStorage.getItem(bookingsStorageKey) ?? ''
+
+    expect(raw).toContain('2026-10-08T06:00:00.000Z')
+    expect(storage.read()[0].start).toBeInstanceOf(Date)
   })
 
   it('переживает пересоздание хранилища, то есть перезагрузку страницы', () => {

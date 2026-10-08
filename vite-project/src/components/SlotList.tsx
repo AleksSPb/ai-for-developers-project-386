@@ -1,19 +1,15 @@
 import { Button, Group, Stack, Text, UnstyledButton } from '@mantine/core'
 
-import {
-  formatMinutes,
-  formatSlotRange,
-  getGuestTimeZone,
-} from '../app/format'
+import { formatSlotRange } from '../app/formatTime'
+import { getSlotStatus } from '../domain/day'
 import type { Booking } from '../domain/booking'
-import { organizerTimeZone } from '../domain/config'
-import { getDaySlots, getSlotEnd, getSlotStart, getSlotStatus, type DateKey, type Slot } from '../domain/schedule'
-import { getZonedMinutesOfDay } from '../domain/time'
+import type { Slot } from '../domain/slots'
 
 interface SlotListProps {
-  date: DateKey
+  slots: readonly Slot[]
   bookings: readonly Booking[]
   now: Date
+  timeZone: string
   selectedSlot: Slot | null
   onSelect: (slot: Slot) => void
   onContinue: () => void
@@ -22,32 +18,42 @@ interface SlotListProps {
 /**
  * Слоты дня с их статусом.
  *
- * Начавшиеся Слоты не показываются: они не входят в «Свободно», и оставлять
- * их в списке значило бы предлагать Гостю время, которого уже нет.
+ * Список плоский, без разделителей и заголовков между окнами: два окна в один
+ * день дают два обычных Слота подряд, и Гостю безразлично, где кончилось первое
+ * окно. Разделитель означал бы, что это разные сущности, а это не так.
+ *
+ * Начавшиеся Слоты не показываются: они не входят в свободные, и оставлять их
+ * значило бы предлагать время, которого уже нет.
  */
-const SlotList = ({ date, bookings, now, selectedSlot, onSelect, onContinue }: SlotListProps) => {
-  const slots = getDaySlots(date)
+const SlotList = ({
+  slots,
+  bookings,
+  now,
+  timeZone,
+  selectedSlot,
+  onSelect,
+  onContinue,
+}: SlotListProps) => {
+  const visible = slots
     .map((slot) => ({ slot, status: getSlotStatus(slot, bookings, now) }))
     .filter(({ status }) => status !== 'прошедший')
-
-  const guestZone = getGuestTimeZone()
-  const showGuestTime = selectedSlot !== null && guestZone !== organizerTimeZone
 
   return (
     <Stack gap="xs">
       <Text fw={600}>Статус слотов</Text>
 
-      {slots.length === 0 ? (
+      {visible.length === 0 ? (
         <Text size="sm" c="dimmed">
           Свободных слотов на этот день нет
         </Text>
       ) : (
         <Stack gap={6}>
-          {slots.map(({ slot, status }) => {
-            const isSelected = selectedSlot !== null && selectedSlot.startMinutes === slot.startMinutes
+          {visible.map(({ slot, status }) => {
+            const isSelected = selectedSlot?.start.getTime() === slot.start.getTime()
+
             return (
               <UnstyledButton
-                key={slot.startMinutes}
+                key={slot.start.toISOString()}
                 onClick={() => onSelect(slot)}
                 disabled={status === 'занят'}
                 aria-pressed={isSelected}
@@ -65,7 +71,7 @@ const SlotList = ({ date, bookings, now, selectedSlot, onSelect, onContinue }: S
                   opacity: status === 'занят' ? 0.6 : 1,
                 }}
               >
-                <Text size="sm">{formatSlotRange(slot)}</Text>
+                <Text size="sm">{formatSlotRange(slot, timeZone)}</Text>
                 <Text size="sm" fw={500}>
                   {status === 'занят' ? 'Занято' : 'Свободно'}
                 </Text>
@@ -75,17 +81,9 @@ const SlotList = ({ date, bookings, now, selectedSlot, onSelect, onContinue }: S
         </Stack>
       )}
 
-      {showGuestTime && selectedSlot !== null && (
-        <Text size="xs" c="dimmed">
-          {`По вашему времени (${guestZone}): ${formatMinutes(
-            getZonedMinutesOfDay(getSlotStart(selectedSlot), guestZone),
-          )} - ${formatMinutes(getZonedMinutesOfDay(getSlotEnd(selectedSlot), guestZone))}`}
-        </Text>
-      )}
-
       <Group>
-        {/* Кнопки «Назад» нет: первый шаг — начало, и назад от него идти
-            некуда. Кнопка без действия хуже её отсутствия. */}
+        {/* Кнопки «Назад» нет: первый шаг — начало, и назад от него идти некуда.
+            Кнопка без действия хуже её отсутствия. */}
         <Button onClick={onContinue} disabled={selectedSlot === null}>
           Продолжить
         </Button>

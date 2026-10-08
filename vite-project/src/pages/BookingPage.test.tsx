@@ -5,10 +5,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider } from '../app/AppProvider'
 import type { Booking } from '../domain/booking'
 import type { BookingStorage } from '../ports/storage'
+import { server } from '../test/server'
+import { stubEventTypeHandler, stubUnavailableHandler, stubWindowsHandler } from '../test/windowFixtures'
 import BookingPage from './BookingPage'
 
-/** 09:00 по Москве: Слот 09:00 уже начался, поэтому в списке его нет. */
-const NOW = new Date('2026-03-28T06:00:00.000Z')
+/**
+ * Страница записи на TypeScript.
+ *
+ * Страница ходит в сгенерированный клиент, поэтому источники подменяются через
+ * MSW: иначе тест проверял бы заглушку вместо страницы.
+ *
+ * «Сейчас» — 09:00 по Москве 8 октября: окно 09:00–18:00 делится на часовые
+ * Слоты, первый уже начался, поэтому в списке его нет.
+ */
+
+const NOW = new Date('2026-10-08T06:00:00.000Z')
+const TODAY = '2026-10-08'
+
+const window_ = { start: `${TODAY}T06:00:00.000Z`, end: `${TODAY}T15:00:00.000Z` }
+
+/** Окно следующего дня: календарь тянется до последнего дня со Слотом. */
+const tomorrowWindow = { start: '2026-10-09T06:00:00.000Z', end: '2026-10-09T15:00:00.000Z' }
+
+/** Типовой набор источников: окно на сегодня и Тип события на 60 минут. */
+const withSources = () => server.use(stubWindowsHandler(window_), stubEventTypeHandler(60))
 
 const createMemoryStorage = (initial: readonly Booking[] = []): BookingStorage => {
   const state = { bookings: [...initial] }
@@ -20,8 +40,6 @@ const createMemoryStorage = (initial: readonly Booking[] = []): BookingStorage =
   }
 }
 
-const renderPage = (bookings: readonly Booking[] = []) => render(storageWith(createMemoryStorage(bookings)))
-
 const storageWith = (storage: BookingStorage) => (
   <MantineProvider>
     <AppProvider storage={storage}>
@@ -30,80 +48,210 @@ const storageWith = (storage: BookingStorage) => (
   </MantineProvider>
 )
 
+const renderPage = (bookings: readonly Booking[] = []) => render(storageWith(createMemoryStorage(bookings)))
+
+/**
+ * Кнопка Слота в списке.
+ *
+ * Текст диапазона встречается дважды — в списке Слотов и в панели информации, —
+ * поэтому берём именно кнопку.
+ */
+/**
+ * Ячейка дня в сетке.
+ *
+ * Число дня повторяется в панели информации, поэтому берём именно кнопку внутри
+ * календаря.
+ */
+const dayCell = (day: string): HTMLElement => {
+  const calendar = screen.getByText('Календарь').closest('div')?.parentElement
+  const found = [...(calendar?.querySelectorAll('button') ?? [])].find(
+    (button) => button.textContent?.startsWith(day),
+  )
+
+  if (found === undefined) {
+    throw new Error(`ячейка ${day} не найдена`)
+  }
+
+  return found
+}
+
+const slotButton = (range: string): HTMLElement => {
+  // Диапазон выбранного Слота дублируется в панели информации, поэтому берём то
+  // вхождение, которое лежит в кнопке списка.
+  const button = screen
+    .getAllByText(range)
+    .map((node) => node.closest('button'))
+    .find((found) => found !== null)
+
+  if (button === undefined) {
+    throw new Error(`слот ${range} не найден`)
+  }
+
+  return button
+}
+
+/** Ответы приходят промисом, поэтому первый экран — текст загрузки. */
+const awaitSources = async () => {
+  await screen.findByText('Длительность слота')
+}
+
+const booking = (startIso: string, id = 'b1'): Booking => ({
+  id,
+  eventTypeId: 'consultation',
+  start: new Date(startIso),
+  end: new Date(new Date(startIso).getTime() + 60 * 60_000),
+  guestName: 'Demo User',
+  guestEmail: 'demo@example.com',
+  createdAt: '2026-10-07T14:40:00.000Z',
+})
+
 beforeEach(() => {
-  vi.useFakeTimers()
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(NOW)
+  withSources()
 })
 
 afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('первый шаг записи', () => {
-  it('открывает сегодняшний день, когда в нём есть свободные Слоты', () => {
+describe('источники страницы', () => {
+  it('не рисует календарь, пока не пришли окна приёма', () => {
     renderPage()
-    expect(screen.getByText('суббота, 28 марта')).toBeTruthy()
+    expect(screen.getByText('Загружаем окна приёма…')).toBeTruthy()
+    expect(screen.queryByText('Календарь')).toBeNull()
   })
 
-  it('показывает длительность Слота', () => {
+  it('называет непришедший источник, а не показывает частичное состояние', async () => {
     renderPage()
-    // Счётчик свободных Слотов проверяется в домене: число 17 встречается
-    // ещё и в ячейке 17 марта, а слово «Свободно» — ещё и в статусе Слота,
-    // поэтому в компонентном тесте берём строку, которая встречается один раз.
+    // Окна пришли, Тип ещё нет: называем именно Тип, а не «загрузка».
+    server.use(stubEventTypeHandler(60))
+    await awaitSources()
+    expect(screen.queryByText('Загружаем окна приёма…')).toBeNull()
+  })
+
+  it('говорит об отказе сервера, а не показывает пустой календарь', async () => {
+    server.use(stubUnavailableHandler())
+
+    renderPage()
+    expect(await screen.findByText('Сервис временно недоступен')).toBeTruthy()
+    expect(screen.queryByText('Календарь')).toBeNull()
+  })
+})
+
+describe('календарь', () => {
+  it('рисует месяц с окнами и не предлагает листать назад', async () => {
+    server.resetHandlers()
+    server.use(stubWindowsHandler(window_, tomorrowWindow), stubEventTypeHandler(60))
+    renderPage()
+    await awaitSources()
+
+    // Заголовок несёт диапазон и в обрезанном месяце: слева сегодня, справа
+    // последний день со Слотом, а не конец месяца.
+    expect(screen.getByText('8 – 9 октября 2026')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Предыдущий месяц' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Следующий месяц' })).toHaveProperty('disabled', true)
+  })
+
+  it('не рисует ни одного дня раньше сегодняшнего', async () => {
+    server.resetHandlers()
+    server.use(stubWindowsHandler(window_, tomorrowWindow), stubEventTypeHandler(60))
+    renderPage()
+    await awaitSources()
+
+    // Седьмого октября в календаре нет вовсе: месяц обрезан по левой границе.
+    expect(dayCell('8')).toBeTruthy()
+    expect(() => dayCell('7')).toThrow()
+  })
+
+  it('не рисует ни одного дня позже последнего дня со Слотом', async () => {
+    renderPage()
+    await awaitSources()
+
+    // Окно одно и кончается 18:00: последний день со Слотом — восьмое, и
+    // девятого в календаре нет.
+    expect(screen.getByText('8 – 8 октября 2026')).toBeTruthy()
+    expect(screen.queryByText('9')).toBeNull()
+  })
+
+  it('показывает длительность Слота из Типа события', async () => {
+    server.resetHandlers()
+    server.use(stubWindowsHandler(window_), stubEventTypeHandler(45))
+    renderPage()
+    await awaitSources()
+
     const row = screen.getByText('Длительность слота').parentElement
-    expect(row?.textContent).toBe('Длительность слота30 мин')
+    expect(row?.textContent).toBe('Длительность слота45 мин')
   })
 
-  it('не показывает начавшийся Слот в списке', () => {
+  it('делит окно на Слоты длительности Типа', async () => {
     renderPage()
-    expect(screen.queryByText('09:00 - 09:30')).toBeNull()
-    expect(screen.getByText('09:30 - 10:00')).toBeTruthy()
+    await awaitSources()
+
+    // Окно 09:00–18:00 при часовых Слотах: первый начался, поэтому в списке его
+    // нет, а второй 10:00 есть.
+    expect(screen.queryByText('09:00 – 10:00')).toBeNull()
+    expect(screen.getByText('10:00 – 11:00')).toBeTruthy()
   })
 
-  it('держит продолжение закрытым, пока Слот не выбран', () => {
+  it('в ячейке доступного дня показывает число свободных Слотов', async () => {
     renderPage()
+    await awaitSources()
+
+    // Окно даёт девять часовых Слотов, первый уже прошёл.
+    expect(screen.getByText('8 св.')).toBeTruthy()
+  })
+
+  it('гаснущий день не показывает числа, различие несёт подсказка', async () => {
+    // Окна есть 8-го и 10-го, поэтому 9-е — день без окна: он гаснет, и это
+    // видно по подсказке, а не по подписи под числом.
+    server.resetHandlers()
+    server.use(
+      stubWindowsHandler(window_, { start: '2026-10-10T06:00:00.000Z', end: '2026-10-10T15:00:00.000Z' }),
+      stubEventTypeHandler(60),
+    )
+    renderPage()
+    await awaitSources()
+
+    const dimmed = dayCell('9')
+    expect(dimmed).toHaveProperty('disabled', true)
+
+    // Подсказка появляется по наведению, как и ведут себя настоящие тултипы:
+    // держать весь текст в DOM значило бы прятать его от скринридера дважды.
+    fireEvent.mouseEnter(dimmed)
+    expect(await screen.findByText('В этот день приём не ведётся')).toBeTruthy()
+  })
+})
+
+describe('первый шаг записи', () => {
+  it('держит продолжение закрытым, пока Слот не выбран', async () => {
+    renderPage()
+    await awaitSources()
     expect(screen.getByRole('button', { name: 'Продолжить' })).toHaveProperty('disabled', true)
   })
 
-  it('открывает продолжение после выбора Слота и ведёт к подтверждению', () => {
+  it('открывает продолжение после выбора Слота и ведёт к подтверждению', async () => {
     renderPage()
-    fireEvent.click(screen.getByText('09:30 - 10:00'))
+    await awaitSources()
+
+    fireEvent.click(slotButton('10:00 – 11:00'))
     fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
     expect(screen.getByText('Подтверждение записи')).toBeTruthy()
   })
 
-  it('показывает занятый Слот и не даёт его выбрать', () => {
-    const taken: Booking = {
-      id: 'b1',
-      date: '2026-03-28',
-      startMinutes: 570,
-      endMinutes: 600,
-      guestName: 'Demo User',
-      guestEmail: 'demo@example.com',
-      createdAt: '2026-03-27T14:40:00.000Z',
-    }
-    renderPage([taken])
+  it('показывает занятый Слот и не даёт его выбрать', async () => {
+    renderPage([booking(`${TODAY}T07:00:00.000Z`)])
+    await awaitSources()
 
-    const row = screen.getByText('09:30 - 10:00').closest('button')
-    expect(row).toHaveProperty('disabled', true)
+    expect(slotButton('10:00 – 11:00')).toHaveProperty('disabled', true)
     expect(screen.getByText('Занято')).toBeTruthy()
   })
 
-  it('показывает число свободных Слотов в ячейке даты', () => {
+  it('возвращает выбор на шаг записи с кнопки «Изменить»', async () => {
     renderPage()
-    // Ячейка 28 марта подписана числом свободных Слотов.
-    expect(screen.getByText('17 св.')).toBeTruthy()
-  })
+    await awaitSources()
 
-  it('закрывает дни за пределами горизонта записи', () => {
-    renderPage()
-    const cell = screen.getByText('18').closest('button')
-    expect(cell).toHaveProperty('disabled', true)
-  })
-
-  it('возвращает выбор на шаг записи с кнопки «Изменить»', () => {
-    renderPage()
-    fireEvent.click(screen.getByText('09:30 - 10:00'))
+    fireEvent.click(slotButton('10:00 – 11:00'))
     fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
     fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
     expect(screen.getByText('Статус слотов')).toBeTruthy()
@@ -111,38 +259,46 @@ describe('первый шаг записи', () => {
 })
 
 describe('подтверждение записи', () => {
-  const reachConfirmation = () => {
-    fireEvent.click(screen.getByText('09:30 - 10:00'))
+  const reachConfirmation = async () => {
+    fireEvent.click(slotButton('10:00 – 11:00'))
     fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }))
   }
 
-  it('показывает выбранный Слот и запрашивает имя и почту', () => {
+  it('показывает выбранный Слот и запрашивает имя и почту', async () => {
     renderPage()
-    reachConfirmation()
-    expect(screen.getByText('суббота, 28 марта, 09:30 - 10:00')).toBeTruthy()
+    await awaitSources()
+    await reachConfirmation()
+
+    // Выбранный Слот виден на шаге подтверждения целиком: день и диапазон.
+    expect(screen.getByText('четверг, 8 октября, 10:00 – 11:00')).toBeTruthy()
     expect(screen.getByLabelText('Имя')).toBeTruthy()
     expect(screen.getByLabelText('Email')).toBeTruthy()
   })
 
-  it('не показывает ошибки до первой попытки подтвердить', () => {
+  it('не показывает ошибки до первой попытки подтвердить', async () => {
     renderPage()
-    reachConfirmation()
+    await awaitSources()
+    await reachConfirmation()
+
     expect(screen.queryByText('Введите имя')).toBeNull()
   })
 
-  it('требует имя и почту при пустых полях', () => {
+  it('требует имя и почту при пустых полях', async () => {
     renderPage()
-    reachConfirmation()
+    await awaitSources()
+    await reachConfirmation()
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+
     expect(screen.getByText('Введите имя')).toBeTruthy()
     expect(screen.getByText('Введите почту в формате name@example.com')).toBeTruthy()
   })
 
-  it('сохраняет Бронь и показывает экран успеха', () => {
+  it('сохраняет Бронь и показывает экран успеха', async () => {
     const storage = createMemoryStorage()
     render(storageWith(storage))
+    await awaitSources()
+    await reachConfirmation()
 
-    reachConfirmation()
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: '  Demo User  ' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'Demo@Example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
@@ -150,18 +306,18 @@ describe('подтверждение записи', () => {
     expect(screen.getByText('Бронь подтверждена. До встречи!')).toBeTruthy()
     expect(storage.read()).toHaveLength(1)
     expect(storage.read()[0]).toMatchObject({
-      date: '2026-03-28',
-      startMinutes: 570,
+      eventTypeId: 'consultation',
       guestName: 'Demo User',
       guestEmail: 'demo@example.com',
     })
+    expect(storage.read()[0].start.toISOString()).toBe(`${TODAY}T07:00:00.000Z`)
   })
 
-  it('возвращает к первому шагу с кнопки «Забронировать ещё»', () => {
-    const storage = createMemoryStorage()
-    render(storageWith(storage))
+  it('возвращает к первому шагу с кнопки «Забронировать ещё»', async () => {
+    renderPage()
+    await awaitSources()
+    await reachConfirmation()
 
-    reachConfirmation()
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
@@ -172,27 +328,30 @@ describe('подтверждение записи', () => {
     expect(screen.getByRole('button', { name: 'Продолжить' })).toHaveProperty('disabled', true)
   })
 
-  it('теряет введённые поля при возврате через «Изменить»', () => {
+  it('теряет введённые поля при возврате через «Изменить»', async () => {
     renderPage()
-    reachConfirmation()
+    await awaitSources()
+    await reachConfirmation()
+
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
     fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
-    reachConfirmation()
+    await reachConfirmation()
 
     expect(screen.getByLabelText('Имя')).toHaveProperty('value', '')
   })
 
-  it('отказывает, если Слот прошёл, пока гость вводил почту', () => {
+  it('отказывает, если Слот прошёл, пока гость вводил почту', async () => {
     const storage = createMemoryStorage()
     render(storageWith(storage))
+    await awaitSources()
+    await reachConfirmation()
 
-    reachConfirmation()
     fireEvent.change(screen.getByLabelText('Имя'), { target: { value: 'Demo User' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'demo@example.com' } })
 
-    // Гость начал в 09:00, а подтвердил в 10:00: Слот 09:30 уже прошёл.
+    // Гость начал в 09:00, а подтвердил в 12:00: Слот 10:00 уже прошёл.
     act(() => {
-      vi.advanceTimersByTime(60 * 60_000)
+      vi.advanceTimersByTime(3 * 60 * 60_000)
     })
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
 

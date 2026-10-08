@@ -1,46 +1,77 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasConflict, intervalsOverlap, normalizeGuest, validateGuest } from './booking'
-import type { Booking } from './booking'
+import { normalizeGuest, validateGuest, type Booking } from './booking'
+import { hasConflict, intervalsOverlap, type TimeRange } from './range'
 
-const interval = (startMinutes: number, endMinutes: number) => ({ startMinutes, endMinutes })
+/**
+ * Интервалы — парами моментов.
+ *
+ * Проверки пересечения переехали сюда из `booking`: они про интервалы вообще, а не
+ * про Бронь, и Бронь — лишь один из их пользователей.
+ */
+
+const at = (iso: string): Date => new Date(iso)
+
+const range = (startIso: string, endIso: string): TimeRange => ({
+  start: at(startIso),
+  end: at(endIso),
+})
 
 const booking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'b1',
-  date: '2026-03-28',
-  startMinutes: 9 * 60,
-  endMinutes: 9 * 60 + 30,
+  eventTypeId: 'consultation',
+  start: at('2026-10-08T06:00:00.000Z'),
+  end: at('2026-10-08T06:30:00.000Z'),
   guestName: 'Demo User',
   guestEmail: 'demo@example.com',
-  createdAt: '2026-03-27T14:40:00.000Z',
+  createdAt: '2026-10-07T14:40:00.000Z',
   ...overrides,
 })
 
 describe('intervalsOverlap', () => {
-  it('границы не пересекаются: следующий слот начинается в момент конца', () => {
-    expect(intervalsOverlap(interval(540, 570), interval(570, 600))).toBe(false)
+  it('границы не пересекаются: следующий Слот начинается в момент конца', () => {
+    expect(
+      intervalsOverlap(
+        range('2026-10-08T06:00:00.000Z', '2026-10-08T06:30:00.000Z'),
+        range('2026-10-08T06:30:00.000Z', '2026-10-08T07:00:00.000Z'),
+      ),
+    ).toBe(false)
   })
 
   it('пересекается, если один интервал заходит внутрь другого', () => {
-    expect(intervalsOverlap(interval(540, 570), interval(555, 585))).toBe(true)
+    expect(
+      intervalsOverlap(
+        range('2026-10-08T06:00:00.000Z', '2026-10-08T07:00:00.000Z'),
+        range('2026-10-08T06:15:00.000Z', '2026-10-08T06:45:00.000Z'),
+      ),
+    ).toBe(true)
   })
 
-  it('полностью вложенный интервал тоже пересекается', () => {
-    expect(intervalsOverlap(interval(540, 600), interval(555, 585))).toBe(true)
+  it('интервал через полночь пересекает соседние сутки', () => {
+    // Моменты, а не минуты от полуночи: бронь, перешагнувшая полночь, занимает
+    // Слот следующих суток, и это раньше было невыразимо.
+    const overnight = booking({
+      start: at('2026-10-08T21:30:00.000Z'),
+      end: at('2026-10-09T00:30:00.000Z'),
+    })
+
+    expect(
+      hasConflict(range('2026-10-09T00:00:00.000Z', '2026-10-09T01:00:00.000Z'), [overnight]),
+    ).toBe(true)
   })
 })
 
 describe('hasConflict', () => {
-  it('находит пересечение среди броней', () => {
-    expect(hasConflict(interval(555, 585), [booking()])).toBe(true)
+  it('находит пересечение среди Броней', () => {
+    expect(hasConflict(range('2026-10-08T06:15:00.000Z', '2026-10-08T06:45:00.000Z'), [booking()])).toBe(true)
   })
 
   it('не находит пересечения, когда интервалы соседствуют', () => {
-    expect(hasConflict(interval(570, 600), [booking()])).toBe(false)
+    expect(hasConflict(range('2026-10-08T06:30:00.000Z', '2026-10-08T07:00:00.000Z'), [booking()])).toBe(false)
   })
 
   it('пустой список не создаёт конфликта', () => {
-    expect(hasConflict(interval(540, 570), [])).toBe(false)
+    expect(hasConflict(range('2026-10-08T06:00:00.000Z', '2026-10-08T06:30:00.000Z'), [])).toBe(false)
   })
 })
 

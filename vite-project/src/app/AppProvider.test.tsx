@@ -3,7 +3,8 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Booking } from '../domain/booking'
-import { getDaySlots, type Slot } from '../domain/schedule'
+import type { Slot } from '../domain/slots'
+import { divideWindowIntoSlots } from '../domain/slots'
 import type { BookingStorage } from '../ports/storage'
 import { AppProvider } from './AppProvider'
 import type { AddBookingResult } from './appContext'
@@ -12,16 +13,26 @@ import { useApp } from './useApp'
 const NOW = new Date('2026-03-28T06:00:00.000Z')
 const TODAY = '2026-03-28'
 
+/**
+ * Окно приёма 09:00–18:00 по Москве, делённое на получасовые Слоты.
+ *
+ * Окно приходит аргументом, а не константой расписания: Правило расписания
+ * теперь приходит с сервера, и тест не должен выдавать его за встроенное.
+ */
+const window = { start: new Date(`${TODAY}T06:00:00.000Z`), end: new Date(`${TODAY}T15:00:00.000Z`) }
+
+const daySlots = (): Slot[] => divideWindowIntoSlots(window, 30)
+
 /** 10:00 по Москве — будущий Слот, который ещё никем не занят. */
-const freeSlot = (): Slot => getDaySlots(TODAY)[2]
+const freeSlot = (): Slot => daySlots()[2]
 
 const validGuest = { name: 'Demo User', email: 'demo@example.com' }
 
 const existingBooking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'existing',
-  date: TODAY,
-  startMinutes: 600,
-  endMinutes: 630,
+  eventTypeId: 'consultation',
+  start: new Date(`${TODAY}T07:00:00.000Z`),
+  end: new Date(`${TODAY}T07:30:00.000Z`),
   guestName: 'Demo User',
   guestEmail: 'demo@example.com',
   createdAt: '2026-03-27T14:40:00.000Z',
@@ -46,13 +57,13 @@ interface ProbeProps {
 
 const Probe = ({ guest = validGuest, onReady }: ProbeProps) => {
   const { bookings, now, addBooking } = useApp()
-  onReady?.((slot) => addBooking({ slot, guest }))
+  onReady?.((slot) => addBooking({ slot, eventTypeId: 'consultation', guest }))
   return (
     <ul>
       <li>броней: {bookings.length}</li>
       <li>сейчас: {now.toISOString()}</li>
       {bookings.map((booking) => (
-        <li key={booking.id}>{`${booking.date} ${booking.startMinutes}`}</li>
+        <li key={booking.id}>{booking.start.toISOString()}</li>
       ))}
     </ul>
   )
@@ -149,7 +160,7 @@ describe('AppProvider', () => {
     let outcome: AddBookingResult = { ok: true }
     act(() => {
       // 09:00 по Москве к моменту NOW уже начался.
-      outcome = submit(getDaySlots(TODAY)[0])
+      outcome = submit(daySlots()[0])
     })
 
     expect(outcome.ok).toBe(false)
