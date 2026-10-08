@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { TEXT_LIMITS } from '../app/textLimits'
 import { server } from '../test/server'
 import TypeSelectionPage from './TypeSelectionPage'
 
@@ -52,6 +53,35 @@ beforeEach(() => {
   server.use(
     withTypes(eventType(), eventType({ id: 'review', name: 'Разбор', durationMinutes: 60 })),
   )
+})
+
+describe('описание на границе', () => {
+  it('показывается целиком, а не с многоточием', async () => {
+    // Обрезанное описание сделало бы два одинаково названных Типа неразличимыми для
+    // Гостя, и он не увидел бы почему. Карточка потому и обязана показать целиком.
+    const long = 'я'.repeat(TEXT_LIMITS.description)
+    server.use(withTypes(eventType({ description: long })))
+    renderPage()
+    await ready()
+
+    expect(screen.getByText(long)).toBeTruthy()
+  })
+
+  it('два Типа с одинаковым названием остаются различимыми по описанию', async () => {
+    // Названия не уникальны: описание — единственное, чем Типы различаются на
+    // странице выбора.
+    server.use(
+      withTypes(
+        eventType({ id: 'first', name: 'Консультация', description: 'Полчаса о вашем проекте' }),
+        eventType({ id: 'second', name: 'Консультация', description: 'Час о вашем проекте' }),
+      ),
+    )
+    renderPage()
+    await ready()
+
+    expect(screen.getByText('Полчаса о вашем проекте')).toBeTruthy()
+    expect(screen.getByText('Час о вашем проекте')).toBeTruthy()
+  })
 })
 
 describe('страница выбора Типа', () => {

@@ -421,7 +421,8 @@ components:
       properties:
         id:
           type: string
-          minLength: 1
+          minLength: 3
+          maxLength: 40
           pattern: ^[a-z0-9-]+$
           description: |-
             Идентификатор Типа события, из которого строится гостевой адрес записи.
@@ -429,10 +430,12 @@ components:
         name:
           type: string
           minLength: 1
+          maxLength: 100
           description: Название Типа события.
         description:
           type: string
           minLength: 1
+          maxLength: 600
           description: Что это за событие.
         durationMinutes:
           type: integer
@@ -494,7 +497,8 @@ components:
       properties:
         id:
           type: string
-          minLength: 1
+          minLength: 3
+          maxLength: 40
           pattern: ^[a-z0-9-]+$
           description: |-
             Идентификатор Типа события, из которого строится адрес записи.
@@ -502,15 +506,21 @@ components:
         name:
           type: string
           minLength: 1
+          maxLength: 100
           description: 'Название для показа: Владельцу в списке, Гостю на странице выбора.'
         description:
           type: string
           minLength: 1
+          maxLength: 600
           description: |-
             Что это за событие, для показа Гостю под названием.
 
             Названия не уникальны, поэтому описание — единственное, чем два Типа с
             одинаковым названием различаются для Гостя. Поле обязательное.
+
+            Предел самый просторный из трёх, и обрезать его нельзя: обрезанное описание
+            сделало бы два одинаково названных Типа неразличимыми, и Гость не увидел бы
+            почему.
         durationMinutes:
           type: integer
           format: int32
@@ -640,10 +650,12 @@ components:
         name:
           type: string
           minLength: 1
+          maxLength: 100
           description: Новое название Типа события.
         description:
           type: string
           minLength: 1
+          maxLength: 600
           description: Новое описание Типа события.
       description: |-
         Запрос на переименование Типа события.

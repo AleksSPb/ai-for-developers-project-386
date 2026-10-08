@@ -1,5 +1,7 @@
 import { http, HttpResponse, type JsonBodyType } from 'msw'
 
+import { TEXT_LIMITS, TEXT_MINIMUMS } from '../app/textLimits'
+
 /**
  * Заглушки сетевого слоя, написанные руками.
  *
@@ -260,6 +262,19 @@ export const stubbedResponseFor = (operation: StubbedOperation): StubbedResponse
 }
 
 /**
+ * Ответ операции с готовым телом.
+ *
+ * Хранилище отвечает за успех, а код и тело отказа берутся из констант, описанных
+ * рядом с `stubbedResponses`: отказ описан в контракте один раз, и выдумывать
+ * вторую копию значило бы однажды получить заглушку, которой нет в спецификации.
+ */
+const described = (status: number, model: string, body: unknown): StubbedResponse => ({
+  status,
+  model,
+  body,
+})
+
+/**
  * Обработчик операции: плейсхолдер `{id}` из контракта становится `:id`.
  *
  * Один обработчик на операцию, а не по одному на ответ: MSW берёт первый
@@ -286,4 +301,253 @@ const handlerFor = (operation: StubbedOperation) => {
   }
 }
 
-export const handlers = (Object.keys(stubbedResponses) as StubbedOperation[]).map(handlerFor)
+/**
+ * Запрос на создание Типа события, как его пришлёт клиент.
+ *
+ * Отдельная форма ответа намеренно: тело запроса и тело ответа о Типе события —
+ * разные вещи, и подставить одно вместо другого значило бы потерять то, что
+ * Владелец написал.
+ */
+interface CreateEventTypeBody {
+  id: string
+  name: string
+  description: string
+  durationMinutes: number
+}
+
+/** Запрос на запись, как его пришлёт клиент. */
+interface CreateBookingBody {
+  eventTypeId: string
+  timeRange: { start: string; end: string }
+  guestName: string
+  guestEmail: string
+}
+
+/** Тело, которым сервер отвечает на создание: то же, что лежит в хранилище. */
+type EventTypeBody = Omit<CreateEventTypeBody, never>
+
+/** Тело, которым сервер отвечает на запись. */
+type BookingBody = CreateBookingBody & { id: string; createdAt: string }
+
+/**
+ * Хранилище заглушек.
+ *
+ * **Живёт в памяти и помнит написанное:** без этого созданный Тип или записанный
+ * Слот появлялись на экране и тут же пропадали из списков, и проверить руками
+ * «успех создания показывает карточку сразу» было нечем — тест проходил бы,
+ * увидев карточку, которая была и до клика.
+ *
+ * Отдельно от `stubbedResponses`: та таблица отвечает на вопрос «какие коды и
+ * модели описаны в контракте» и остаётся написанной руками, а это отвечает на
+ * вопрос «что лежит сейчас».
+ *
+ * Сбрасывается между тестами — см. `resetStubStore`.
+ */
+const store = {
+  eventTypes: [] as EventTypeBody[],
+  bookings: [] as BookingBody[],
+}
+
+const seedEventTypes = (): EventTypeBody[] => [
+  { ...stubEventType },
+  { ...stubOtherEventType },
+]
+
+const seedBookings = (): BookingBody[] => stubBookingList.map((booking) => ({ ...booking }))
+
+/**
+ * Вернуть хранилище к посеянному состоянию.
+ *
+ * Вызывается после каждого теста рядом со `server.resetHandlers()`: заглушка,
+ * пережившая один тест, не должна достаться следующему — иначе тесты начали бы
+ * зависеть от порядка, и падение одного тянуло за собой чужие.
+ */
+export const resetStubStore = (): void => {
+  store.eventTypes = seedEventTypes()
+  store.bookings = seedBookings()
+}
+
+resetStubStore()
+
+/**
+ * Тот же Слот, что и у такой-то Брони.
+ *
+ * Идемпотентность по содержимому, как её обещает контракт: повтор запроса вернёт
+ * ту же Броню, а не заведёт вторую на то же время.
+ */
+const sameSlot = (a: BookingBody, b: CreateBookingBody): boolean =>
+  a.eventTypeId === b.eventTypeId && a.timeRange.start === b.timeRange.start
+
+/**
+ * Проверка полей Типа события по тому, что объявлено в контракте.
+ *
+ * Заглушка **обязана** отвергать негодное, иначе она врёт: без неё пустой
+ * идентификатор заводил Тип, и проверка руками показывала успех там, где
+ * настоящий сервер вернул бы `422`.
+ *
+ * Правила взяты из `main.tsp`: `@minLength(1)` у каждого текста, `@maxLength` из
+ * `app/textLimits` (его же сверяет тест контракта) и `@pattern` у идентификатора.
+ *
+ * Возвращаются **все** негодные поля сразу, а не по одному, — так обещает контракт
+ * и так подсвечивает форма за один проход.
+ */
+const idPattern = /^[a-z0-9-]+$/
+
+const validateEventType = (
+  body: Partial<CreateEventTypeBody>,
+  withId: boolean,
+): string[] => {
+  const bad: string[] = []
+
+  if (withId) {
+    const id = body.id ?? ''
+
+    if (
+      id.length < TEXT_MINIMUMS.id ||
+      id.length > TEXT_LIMITS.id ||
+      !idPattern.test(id)
+    ) {
+      bad.push('id')
+    }
+  }
+
+  const name = body.name ?? ''
+  const description = body.description ?? ''
+
+  if (name.length < TEXT_MINIMUMS.name || name.length > TEXT_LIMITS.name) {
+    bad.push('name')
+  }
+
+  if (
+    description.length < TEXT_MINIMUMS.description ||
+    description.length > TEXT_LIMITS.description
+  ) {
+    bad.push('description')
+  }
+
+  return bad
+}
+
+/** Ответ с перечислением негодных полей: ровно то, что обещает `ValidationError`. */
+const invalid = (fields: string[]): StubbedResponse =>
+  described(422, 'ValidationError', {
+    code: 'validation_failed',
+    message: 'Проверка не прошла',
+    fields,
+  })
+
+/**
+ * Создать Тип события: тот же набор полей — та же Бронь-в-Типе, а не отказ.
+ *
+ * Идемпотентность по всем полям, как в контракте: любая правка Типа меняет набор
+ * сама собой, и повтор исходного запроса после переименования вернёт `409`.
+ */
+const createEventType = (body: CreateEventTypeBody): StubbedResponse => {
+  const bad = validateEventType(body, true)
+
+  if (bad.length > 0) {
+    return invalid(bad)
+  }
+
+  const exists = store.eventTypes.some((type) => type.id === body.id)
+
+  if (exists) {
+    const same = store.eventTypes.find((type) => type.id === body.id)
+    const matchesSame = JSON.stringify(same) === JSON.stringify(body)
+
+    if (!matchesSame) {
+      return described(409, 'EventTypeExistsError', stubEventTypeExists)
+    }
+
+    return described(201, 'EventTypeSummary', same)
+  }
+
+  store.eventTypes.push(body)
+
+  return described(201, 'EventTypeSummary', body)
+}
+
+/** Переименовать Тип события: идентификатора в теле нет, он неизменен. */
+const renameEventType = (id: string, body: { name: string; description: string }) => {
+  const index = store.eventTypes.findIndex((type) => type.id === id)
+
+  if (index === -1) {
+    return described(404, 'EventTypeNotFoundError', stubEventTypeNotFound)
+  }
+
+  const bad = validateEventType(body, false)
+
+  if (bad.length > 0) {
+    return invalid(bad)
+  }
+
+  store.eventTypes[index] = { ...store.eventTypes[index], ...body }
+
+  return described(200, 'EventTypeSummary', store.eventTypes[index])
+}
+
+/** Записать Гостя на Слот. */
+const createBooking = (body: CreateBookingBody): StubbedResponse => {
+  const existing = store.bookings.find((booking) => sameSlot(booking, body))
+
+  if (existing !== undefined) {
+    return described(201, 'Booking', existing)
+  }
+
+  const created: BookingBody = {
+    ...body,
+    id: `booking-${store.bookings.length + 1}`,
+    createdAt: new Date().toISOString(),
+  }
+
+  store.bookings.push(created)
+
+  return described(201, 'Booking', created)
+}
+
+/**
+ * Обработчики, которые читают и пишут хранилище.
+ *
+ * Идут раньше общих: MSW берёт первый подходящий, и общий обработчик отвечал бы
+ * зашитым телом, минуя хранилище.
+ */
+const storeHandlers = [
+  http.get('/event-types', () =>
+    HttpResponse.json({ types: store.eventTypes }, { status: 200 }),
+  ),
+
+  http.post('/event-types', async ({ request }) => {
+    const result = await createEventType((await request.json()) as CreateEventTypeBody)
+
+    return HttpResponse.json(result.body as JsonBodyType, { status: result.status })
+  }),
+
+  http.get('/event-types/:id', ({ params }) => {
+    const found = store.eventTypes.find((type) => type.id === params.id)
+
+    if (found === undefined) {
+      return HttpResponse.json(stubEventTypeNotFound as JsonBodyType, { status: 404 })
+    }
+
+    return HttpResponse.json(found as JsonBodyType, { status: 200 })
+  }),
+
+  http.patch('/event-types/:id', async ({ params, request }) => {
+    const result = await renameEventType(
+      String(params.id),
+      (await request.json()) as { name: string; description: string },
+    )
+
+    return HttpResponse.json(result.body as JsonBodyType, { status: result.status })
+  }),
+
+  http.get('/bookings', () => HttpResponse.json(store.bookings, { status: 200 })),
+
+  http.post('/bookings', async ({ request }) => {
+    const result = await createBooking((await request.json()) as CreateBookingBody)
+
+    return HttpResponse.json(result.body as JsonBodyType, { status: result.status })
+  }),
+]
+
+export const handlers = [...storeHandlers, ...(Object.keys(stubbedResponses) as StubbedOperation[]).map(handlerFor)]

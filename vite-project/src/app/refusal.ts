@@ -1,3 +1,5 @@
+import { problemWith, type TextField } from './textLimits'
+
 /**
  * Разбор отказа формы.
  *
@@ -12,11 +14,23 @@ export type FieldErrors = Record<string, string>
 /** Код отказа, который означает «это значение уже занято». */
 export const TAKEN_CODE = 'event_type_exists'
 
+/**
+ * Отказ формы.
+ *
+ * Поля `message` здесь нет **намеренно**: это строка для разработчика, и на первом
+ * же неудачном запросе она оказалась бы перед Владельцем. Причину, по которой
+ * отказали, называют подписи под полями — из значений, которые форма знает сама.
+ *
+ * Поле `code` нужно для одного случая: занятый идентификатор означает «это значение
+ * уже занято», а не «это значение негодно», и текст у него другой.
+ */
 export interface Refusal {
-  message: string
   code?: string
   fields?: string[]
 }
+
+/** Значения полей формы: без них отказ нечем перевести в конкретный текст. */
+export type FieldValues = Record<TextField, string>
 
 /**
  * Ошибки полей из отказа.
@@ -27,8 +41,20 @@ export interface Refusal {
  *
  * Остальные негодные поля подсвечиваются сразу все: форма одна и проверяет всё
  * разом, а по одному ждать четыре круга туда-обратно незачем.
+ *
+ * Текст ошибки называет **причину**, а не факт: сервер прислал только имя поля, и
+ * без знания значений «Значение не подходит» осталось бы единственным
+ * возможным ответом — и бесполезным, потому что Владелец ничего не менял.
+ * Причину знает форма: правила лежат в `textLimits` и сверяются с контрактом.
+ *
+ * Если поле из отказа не удалось распознать или его нет среди значений, текст
+ * остаётся общим: выдумывать причину, которую никто не проверял, значило бы
+ * врать.
  */
-export const errorsFromRefusal = (error: Refusal | null): FieldErrors => {
+export const errorsFromRefusal = (
+  error: Refusal | null,
+  values: FieldValues,
+): FieldErrors => {
   if (error === null) {
     return {}
   }
@@ -38,7 +64,11 @@ export const errorsFromRefusal = (error: Refusal | null): FieldErrors => {
   }
 
   return (error.fields ?? []).reduce<FieldErrors>((accumulator, field) => {
-    accumulator[field] = 'Значение не подходит'
+    const value = values[field as TextField]
+    const problem = value === undefined ? null : problemWith(field as TextField, value)
+
+    accumulator[field] = problem ?? 'Значение не подходит'
+
     return accumulator
   }, {})
 }

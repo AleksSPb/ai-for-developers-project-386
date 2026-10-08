@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 import { Button, Card, Group, Stack, Text, TextInput } from '@mantine/core'
 
-import { errorsFromRefusal, TAKEN_CODE, type Refusal } from '../app/refusal'
+import { errorsFromRefusal, type FieldValues, type Refusal } from '../app/refusal'
+import { TEXT_LIMITS, type TextField } from '../app/textLimits'
+import LengthCounter from './LengthCounter'
 
 interface EventTypeFormProps {
   /** Куда форма сохраняет: `null` означает создание, идентификатор — переименование. */
@@ -17,6 +19,18 @@ interface EventTypeFormProps {
 
 const emptyForm = { id: '', name: '', description: '', durationMinutes: '60' }
 
+/**
+ * Форма создания и переименования Типа события.
+ *
+ * Под каждым текстовым полем стоит счётчик остатка, а `maxLength` не даёт ввести
+ * лишнего: обрезание молча отнимало бы текст без предупреждения, а обрезанное
+ * описание сделало бы два одинаково названных Типа неразличимыми для Гостя, и он
+ * не увидел бы почему.
+ *
+ * Ничего не обрезается **и при отправке**: `submit` отдаёт то, что введено, а не
+ * обрезанное до предела значение. Правило одно и не расходящееся — обрезалось бы
+ * одинаково, а значит не обрезается нигде.
+ */
 const EventTypeForm = ({
   editingId,
   initialName = '',
@@ -31,15 +45,54 @@ const EventTypeForm = ({
       : { ...emptyForm, name: initialName, description: initialDescription },
   )
 
-  const fieldErrors = errorsFromRefusal(error)
+  /**
+   * Значения, с которыми форма последний раз уходила на сервер.
+   *
+   * Отказ говорит о том, что было отправлено. Как только Владелец меняет значение,
+   * отказ относится уже к другому тексту, и держать под ним красную подпись нельзя:
+   * поле выглядело бы негодным при вполне годном содержимом, и Владелец искал бы
+   * причину, которой нет.
+   *
+   * Правило одно на все отказы, включая занятый идентификатор: сменил значение —
+   * отказ больше не про него.
+   */
+  const [sent, setSent] = useState<FieldValues | null>(null)
+
+  /**
+   * Отказ держится, пока форма не менялась.
+   *
+   * Проверка одна на всё: и подписи под полями, и сводная строка. Стоит она не под
+   * полем, потому что нужна для отказов без полей — сервис недоступен, проверка
+   * пришла вовсе без перечисления. Но пока Владелец ничего не поправил, повод
+   * молчать исчезает: сводная строка «Проверка не прошла» осталась бы висеть после
+   * того, как он всё исправил, и выглядела бы как новая беда.
+   */
+  const isUnchanged =
+    sent !== null &&
+    values.id.trim() === sent.id &&
+    values.name.trim() === sent.name &&
+    values.description.trim() === sent.description
+
+  const named = errorsFromRefusal(error, values)
+
+  const fieldErrors = Object.fromEntries(
+    Object.entries(named).filter(
+      ([field]) => values[field as TextField].trim() === sent?.[field as TextField],
+    ),
+  )
+
+  const summary = error !== null && isUnchanged && Object.keys(fieldErrors).length === 0
 
   const submit = () => {
-    onSubmit({
+    const outgoing = {
       ...(editingId === null ? { id: values.id.trim() } : {}),
       name: values.name.trim(),
       description: values.description.trim(),
-      durationMinutes: Number(values.durationMinutes),
-    })
+    }
+
+    setSent({ id: '', ...outgoing })
+
+    onSubmit({ ...outgoing, durationMinutes: Number(values.durationMinutes) })
   }
 
   return (
@@ -51,13 +104,17 @@ const EventTypeForm = ({
           <>
             {/* Идентификатор пишет сам Владелец и он неизменен после создания:
                 поэтому он на форме создания и его нет на форме переименования. */}
-            <TextInput
-              label="Идентификатор"
-              placeholder="consultation"
-              value={values.id}
-              error={fieldErrors.id}
-              onChange={(event) => setValues({ ...values, id: event.currentTarget.value })}
-            />
+            <Stack gap={2}>
+              <TextInput
+                label="Идентификатор"
+                placeholder="consultation"
+                value={values.id}
+                error={fieldErrors.id}
+                maxLength={TEXT_LIMITS.id}
+                onChange={(event) => setValues({ ...values, id: event.currentTarget.value })}
+              />
+              <LengthCounter field="id" value={values.id} />
+            </Stack>
             <TextInput
               label="Длительность, минут"
               value={values.durationMinutes}
@@ -66,22 +123,34 @@ const EventTypeForm = ({
           </>
         )}
 
-        <TextInput
-          label="Название"
-          value={values.name}
-          error={fieldErrors.name}
-          onChange={(event) => setValues({ ...values, name: event.currentTarget.value })}
-        />
-        <TextInput
-          label="Описание"
-          value={values.description}
-          error={fieldErrors.description}
-          onChange={(event) => setValues({ ...values, description: event.currentTarget.value })}
-        />
+        <Stack gap={2}>
+          <TextInput
+            label="Название"
+            value={values.name}
+            error={fieldErrors.name}
+            maxLength={TEXT_LIMITS.name}
+            onChange={(event) => setValues({ ...values, name: event.currentTarget.value })}
+          />
+          <LengthCounter field="name" value={values.name} />
+        </Stack>
 
-        {error !== null && error.code !== TAKEN_CODE && (
+        <Stack gap={2}>
+          <TextInput
+            label="Описание"
+            value={values.description}
+            error={fieldErrors.description}
+            maxLength={TEXT_LIMITS.description}
+            onChange={(event) => setValues({ ...values, description: event.currentTarget.value })}
+          />
+          <LengthCounter field="description" value={values.description} />
+        </Stack>
+
+        {summary && (
           <Text c="red" size="sm">
-            {error.message}
+            {/* Текст свой, а не `message` из ответа: то поле — строка для
+                разработчика, и перед Владельцем оно было бы чужой фразой. Причину
+                называют подписи под полями, а сюда попадают только отказы без полей. */}
+            Не удалось сохранить. Попробуйте ещё раз
           </Text>
         )}
 

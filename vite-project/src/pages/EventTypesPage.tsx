@@ -24,7 +24,7 @@ import SourceAlert from '../components/SourceAlert'
 const EventTypesPage = () => {
   // Сторожа здесь нет и не планируется: свою правку Типа Владелец видит сразу, а
   // встреча появляется от записи Гостя — на странице встреч.
-  const { state: source } = useEventTypes()
+  const { state: source, reload } = useEventTypes()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formError, setFormError] = useState<Refusal | null>(null)
 
@@ -44,15 +44,17 @@ const EventTypesPage = () => {
 
       if (response.status !== 200) {
         setFormError({
-          message: response.data.message,
           ...(response.status === 422 ? { fields: response.data.fields } : {}),
         })
         return
       }
 
-      // Успех показывает карточку сразу: перечитывание списка мигнуло бы экраном
-      // и заставило бы Владельца гадать, сохранилось ли.
+      // Успех показывает карточку сразу: перечитывание списка не мигает экраном,
+      // потому что источник во время перечитывания удерживает прежние данные, — а
+      // ждать ручного обновления, чтобы увидеть собственную правку, Владелец не
+      // станет.
       setEditingId(null)
+      reload()
       return
     }
 
@@ -65,11 +67,15 @@ const EventTypesPage = () => {
 
     if (response.status !== 201) {
       setFormError({
-        message: response.data.message,
         ...('code' in response.data ? { code: response.data.code } : {}),
         ...(response.status === 422 ? { fields: response.data.fields } : {}),
       })
+      return
     }
+
+    // Тот же перечитывающий путь и после создания: карточка нового Типа обязана
+    // появиться сама, а не после ручного обновления страницы.
+    reload()
   }
 
   const header = <Title order={1}>Типы событий</Title>
