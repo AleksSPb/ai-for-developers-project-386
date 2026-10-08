@@ -1,6 +1,6 @@
 import { eventTypesListEventTypes } from '../api/generated/calendar-api'
 import type { EventTypeSummary } from '../api/generated/calendar-api'
-import { fromResponse, useSource, type SourceState } from './source'
+import { fromResponse, useSource, type ReloadableSource, type SourceState } from './source'
 
 /**
  * Типы событий для страницы Владельца.
@@ -12,5 +12,5 @@ import { fromResponse, useSource, type SourceState } from './source'
 export const readEventTypes = async (): Promise<SourceState<EventTypeSummary[]>> =>
   fromResponse(await eventTypesListEventTypes(), (data: { types: EventTypeSummary[] }) => data.types)
 
-export const useEventTypes = (): SourceState<EventTypeSummary[]> =>
+export const useEventTypes = (): ReloadableSource<EventTypeSummary[]> =>
   useSource<EventTypeSummary[]>(readEventTypes, 'event-types')

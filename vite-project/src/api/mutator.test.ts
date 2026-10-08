@@ -16,7 +16,14 @@ describe('мутатор', () => {
     const response = (await customInstance('/windows')) as Response<{ windows: unknown[] }>
 
     expect(response.status).toBe(200)
-    expect(response.data.windows).toHaveLength(1)
+    // Число окон не проверяется: заглушка считает их от сегодняшнего дня, и тест,
+    // привязанный к их количеству, сломался бы вместе с календарём. Проверяется
+    // форма: окна есть и в каждом начало раньше конца.
+    expect(response.data.windows.length).toBeGreaterThan(0)
+
+    for (const window of response.data.windows as { start: string; end: string }[]) {
+      expect(new Date(window.start).getTime()).toBeLessThan(new Date(window.end).getTime())
+    }
   })
 
   it('не разбирает отказ сам, а отдаёт его код и тело вызывающему', async () => {
