@@ -75,8 +75,72 @@ describe('раздел Владельца', () => {
     expect(screen.getByRole('link', { name: 'Записаться' })).toBeTruthy()
   })
 
-  it('гостевая страница записи по-прежнему открывается', async () => {
+  it('голый адрес без Типа ведёт на страницу выбора', async () => {
+    server.use(
+      http.get('/event-types', () =>
+        HttpResponse.json(
+          {
+            types: [
+              {
+                id: 'consultation',
+                name: 'Консультация',
+                description: 'Полчаса',
+                durationMinutes: 60,
+                bookingCount: 0,
+              },
+            ],
+          },
+          { status: 200 },
+        ),
+      ),
+    )
     renderAt('/book')
-    expect(await screen.findByRole('heading', { name: 'Запись на звонок' })).toBeTruthy()
+
+    expect(await screen.findByRole('heading', { name: 'На что записаться?' })).toBeTruthy()
+    // Записи без Типа не существует: календаря на голом адресе быть не должно.
+    expect(screen.queryByText('Календарь')).toBeNull()
+  })
+
+  it('адрес с Типом открывает запись, а не выбор', async () => {
+    server.use(
+      http.get('/windows', () =>
+        HttpResponse.json(
+          { windows: [{ start: '2026-10-08T06:00:00.000Z', end: '2026-10-08T15:00:00.000Z' }] },
+          { status: 200 },
+        ),
+      ),
+      http.get('/event-types/consultation', () =>
+        HttpResponse.json(
+          {
+            id: 'consultation',
+            name: 'Консультация',
+            description: 'Полчаса',
+            durationMinutes: 60,
+            bookingCount: 0,
+          },
+          { status: 200 },
+        ),
+      ),
+      http.get('/event-types', () =>
+        HttpResponse.json(
+          {
+            types: [
+              {
+                id: 'consultation',
+                name: 'Консультация',
+                description: 'Полчаса',
+                durationMinutes: 60,
+                bookingCount: 0,
+              },
+            ],
+          },
+          { status: 200 },
+        ),
+      ),
+    )
+    renderAt('/book/consultation')
+
+    expect(await screen.findByText('Календарь')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'На что записаться?' })).toBeNull()
   })
 })

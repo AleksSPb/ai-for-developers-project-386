@@ -17,17 +17,22 @@ import type { Slot } from '../domain/slots'
 import BookingConfirm from '../components/BookingConfirm'
 import BookingSuccess from '../components/BookingSuccess'
 import CalendarGrid from '../components/CalendarGrid'
+import EventTypeFromUrlCard from '../components/EventTypeFromUrlCard'
 import InfoPanel from '../components/InfoPanel'
 import SlotList from '../components/SlotList'
 
 /**
- * Тип события, под которым открыта страница.
+ * Тип события приходит из адреса: гостевой ссылке его несёт Гость, и страница без
+ * него не имеет смысла — показывать нечего.
  *
- * Пока страницы выбора Типа нет (#58), идентификатор берётся здесь: гостевая
- * ссылка уже несёт его, а Тип события нужен ради одного числа — длительности
- * Слота.
+ * Идентификатор передаётся пропом, а не читается здесь из маршрута: значение и
+ * так знает маршрут, а страница, дёргающая `useParams` сама, молча уходила за
+ * **список** Типов, когда параметр не дошёл, и рисовала календарь по
+ * неопределённой длительности.
  */
-const eventTypeId = 'consultation'
+interface BookingPageProps {
+  eventTypeId: string
+}
 
 type Step = 'choose' | 'confirm' | 'done'
 
@@ -39,7 +44,7 @@ type Step = 'choose' | 'confirm' | 'done'
  * есть как ложь о сервере. Поэтому страница ждёт все источники и называет
  * непришедший: «Загружаем окна приёма…».
  */
-const BookingPage = () => {
+const BookingPage = ({ eventTypeId }: BookingPageProps) => {
   const { bookings, now } = useApp()
   const sources = useBookingSources(eventTypeId)
   const timeZone = getGuestTimeZone()
@@ -108,6 +113,9 @@ const BookingPage = () => {
     return (
       <Stack gap="lg">
         <Title order={1}>Запись на звонок</Title>
+        {/* Карточка Типа из адреса рисуется сразу: адрес открывают в том числе
+            рукой, и пустой экран выглядел бы как сбой. */}
+        <EventTypeFromUrlCard eventTypeId={eventTypeId} />
         <Text c="dimmed">Загружаем {sourceLabel[missing ?? 'windows']}…</Text>
       </Stack>
     )
@@ -137,7 +145,6 @@ const BookingPage = () => {
             date={openDate}
             slot={selectedSlot}
             availableCount={availableCount}
-            durationMinutes={ready.durationMinutes}
             timeZone={timeZone}
           />
         </Card>

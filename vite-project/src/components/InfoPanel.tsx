@@ -1,19 +1,24 @@
 import { Box, Stack, Text } from '@mantine/core'
 
 import { formatDayTitle } from '../app/formatDate'
-import { formatSlotDuration, formatSlotRange } from '../app/formatTime'
+import { formatSlotRange } from '../app/formatTime'
 import type { Slot } from '../domain/slots'
 
 interface InfoPanelProps {
   date: string | null
   slot: Slot | null
   availableCount: number
-  durationMinutes: number
   timeZone: string
 }
 
-/** Что Гость выбрал и сколько в дне осталось. */
-const InfoPanel = ({ date, slot, availableCount, durationMinutes, timeZone }: InfoPanelProps) => {
+/**
+ * Что Гость выбрал и сколько в дне осталось.
+ *
+ * Длительности Слота здесь нет намеренно: рядом с интервалом она ничего не
+ * обещает, а видна гостю ровно в одном месте — на карточке выбора Типа, как
+ * обещание до перехода.
+ */
+const InfoPanel = ({ date, slot, availableCount, timeZone }: InfoPanelProps) => {
   const rows: { label: string; value: string }[] = [
     { label: 'Выбранная дата', value: date === null ? 'Дата не выбрана' : formatDayTitle(date) },
     {
@@ -21,7 +26,6 @@ const InfoPanel = ({ date, slot, availableCount, durationMinutes, timeZone }: In
       value: slot === null ? 'Время не выбрано' : formatSlotRange(slot, timeZone),
     },
     { label: 'Свободно', value: String(availableCount) },
-    { label: 'Длительность слота', value: formatSlotDuration(durationMinutes) },
   ]
 
   return (
