@@ -142,28 +142,77 @@
                 </goals>
                 <configuration>
                   <inputSpec>${contract.file}</inputSpec>
-                  <generatorName>java</generatorName>
+                  <!--
+                    generatorName=spring, НЕ java: наблюдение прототипа (#83).
+                    Генератор `java` — это КЛИЕНТСкие модели под Gson: сгенерированное
+                    дерево не собирается на classpath сервера (нет Gson) и импортирует
+                    пакет `api.invoker`, который при generateSupportingFiles=false не
+                    появляется вовсе. В #91 этого не было видно: main-код модели ещё
+                    не импортировал, а `mvn verify` без профиля `models` их не
+                    компилирует. `spring` даёт Jackson-модели — тот же сериализатор,
+                    что у контроллеров.
+                  -->
+                  <generatorName>spring</generatorName>
                   <!--
                     Только модели: контроллеры, маппинг и JPA пишутся руками (D9),
                     поэтому сгенерированные API-интерфейсы и клиент не нужны.
+                    Флага `generateModelsOnly` не существует — «только модели»
+                    собирается из этих трёх параметров.
                   -->
                   <generateApis>false</generateApis>
+                  <generateSupportingFiles>false</generateSupportingFiles>
+                  <generateModels>true</generateModels>
                   <generateApiTests>false</generateApiTests>
                   <generateModelTests>false</generateModelTests>
                   <generateApiDocumentation>false</generateApiDocumentation>
                   <generateModelDocumentation>false</generateModelDocumentation>
-                  <generateSupportingFiles>false</generateSupportingFiles>
-                  <!-- D40: без этого @Size/@Pattern/@Min в моделях не появятся. -->
-                  <enableBeanValidation>true</enableBeanValidation>
-                  <useJakartaEe>true</useJakartaEe>
                   <modelPackage>com.hexlet.calendar.api.model</modelPackage>
                   <apiPackage>com.hexlet.calendar.api</apiPackage>
                   <invokerPackage>com.hexlet.calendar.api.invoker</invokerPackage>
+                  <!--
+                    Флаги генератора живут в configOptions: перечисленные выше
+                    параметры плагина доходят до генератора как есть, а флаги
+                    codegen'а — только отсюда. Проверено генерацией: вне
+                    configOptions `useBeanValidation` молча игнорировался, и
+                    модели приходили без @Size и @Pattern, то есть D40 не работал.
+                  -->
                   <configOptions>
                     <useTags>true</useTags>
-                    <useSpringBoot3>true</useSpringBoot3>
+                    <!--
+                      io.swagger @Schema в моделях тянет отдельную зависимость
+                      swagger-annotations на classpath продакшена ради аннотаций,
+                      которые серверу не за что читать (OpenAPI наружу отдаёт
+                      закоммиченный контракт, не аннотации). В генераторе 7.x это
+                      не `swaggerAnnotations=false`, а `documentationProvider=none`
+                      — наблюдение прототипа (#83).
+                    -->
+                    <documentationProvider>none</documentationProvider>
                     <openApiNullable>false</openApiNullable>
                     <disallowAdditionalPropertiesIfNotPresent>false</disallowAdditionalPropertiesIfNotPresent>
+                    <!--
+                      D40: `@Size`/`@Pattern`/`@Min` в моделях. Флаг называется
+                      `useBeanValidation`, а не `enableBeanValidation`, и передаётся
+                      явно: при `library=spring-http-interface` плагин ставит его
+                      в `false`, и D40 перестаёт работать молча.
+                    -->
+                    <useBeanValidation>true</useBeanValidation>
+                    <!--
+                      D41: почта проверяется руками, и `guestEmail` добавляется
+                      в `fields[]` независимо от того, пришла ли аннотация из
+                      контракта. Флаг выключен: `@Email` из `format: email` иначе
+                      проверял бы правило дважды, а добавление поля в `fields[]`
+                      осталось бы ручным.
+                    -->
+                    <useEmail>false</useEmail>
+                    <!-- Jakarta-аннотации приходят из `useSpringBoot4`. -->
+                    <useSpringBoot4>true</useSpringBoot4>
+                    <!--
+                      D29: `implicitOptionality: false` в main.tsp означает, что
+                      все поля тела обязательны. Флага `implicitOptionality` в
+                      генераторе нет, нужен `useOptional`, и он уже `false` —
+                      задано явно, чтобы не зависеть от умолчания.
+                    -->
+                    <useOptional>false</useOptional>
                   </configOptions>
                 </configuration>
               </execution>
