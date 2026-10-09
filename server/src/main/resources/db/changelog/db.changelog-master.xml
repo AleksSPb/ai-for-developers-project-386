@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Главный changelog сервера.
+
+  Схему создаёт Liquibase, а не Hibernate: `spring.jpa.hibernate.ddl-auto=validate`
+  (D12) только проверяет, что схема совпадает с ожиданиями, и падает на ошибке.
+  Отдельного агрегатора модулей нет (D1), поэтому changelog лежит рядом с
+  приложением и попадает в jar.
+
+  Миграции разложены по папкам версии: `0.0.1/`, затем `0.0.2/` и так далее.
+  Папка называется той версией `server/pom.xml`, в чей релиз попали её
+  changeset'ы, поэтому дописать миграцию в уже выпущенную версию нельзя —
+  она переехала бы к новому релизу и уехала бы вместе с ним не туда.
+
+  Порядок важен и задан явно, а не через includeAll: сид окон идёт последним,
+  потому что ему нужен готовый `windows`.
+-->
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.33.xsd">
+
+    <include file="db/changelog/0.0.1/001-schema.sql"/>
+    <include file="db/changelog/0.0.1/002-seed-windows.sql"/>
+
+</databaseChangeLog>
