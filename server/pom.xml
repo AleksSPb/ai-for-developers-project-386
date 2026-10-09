@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Сервер календаря бронирования звонков.
+
+  Отдельный Maven-модуль без корневого агрегатора (D1): собирается сам из
+  `server/`, в корне репозитория pom.xml нет и не появится.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.8</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.hexlet.calendar</groupId>
+  <artifactId>server</artifactId>
+  <version>0.0.1</version>
+  <name>calendar-server</name>
+  <description>Сервер бронирования звонков</description>
+
+  <properties>
+    <!-- D6: Java 25. -->
+    <java.version>25</java.version>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!--
+      Генератор моделей из контракта (D10). Плагин не включён в сборку по
+      умолчанию: он читает `vite-project/contract/openapi.yaml`, и связывать
+      с ним `mvn verify` значит собрать сервер невозможно без фронтового
+      модуля. Включается профилем `models` — см. README.
+    -->
+    <openapi.generator.version>7.26.0</openapi.generator.version>
+    <contract.file>${project.basedir}/../vite-project/contract/openapi.yaml</contract.file>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.liquibase</groupId>
+      <artifactId>liquibase-core</artifactId>
+    </dependency>
+    <!--
+      Автоконфигурация Spring Boot. В Boot 4 она вынесена в отдельный модуль, и
+      `spring-boot-starter-data-jpa` его больше не тянет: без этой зависимости
+      Liquibase-core лежит на classpath, но автоконфигурация не появляется в
+      контексте вовсе — миграции молча не выполняются, схемы нет, а приложение
+      стартует. Обнаруживается это только на первой же попытке обратиться к
+      таблице.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-liquibase</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!--
+      `@ServiceConnection`: без него адрес контейнера пришлось бы подставлять
+      вручную через `@DynamicPropertySource`, а этот метод вызывается при сборке
+      контекста — раньше, чем контейнер стартовал.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      Генерация моделей API в `com.hexlet.calendar.api.model` (D9, D10).
+      Модели — единственное, что порождается генератором: контроллеры,
+      маппинг и JPA пишутся руками.
+    -->
+    <profile>
+      <id>models</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.openapitools</groupId>
+            <artifactId>openapi-generator-maven-plugin</artifactId>
+            <version>${openapi.generator.version}</version>
+            <executions>
+              <execution>
+                <id>generate-models</id>
+                <phase>generate-sources</phase>
+                <goals>
+                  <goal>generate</goal>
+                </goals>
+                <configuration>
+                  <inputSpec>${contract.file}</inputSpec>
+                  <generatorName>java</generatorName>
+                  <!--
+                    Только модели: контроллеры, маппинг и JPA пишутся руками (D9),
+                    поэтому сгенерированные API-интерфейсы и клиент не нужны.
+                  -->
+                  <generateApis>false</generateApis>
+                  <generateApiTests>false</generateApiTests>
+                  <generateModelTests>false</generateModelTests>
+                  <generateApiDocumentation>false</generateApiDocumentation>
+                  <generateModelDocumentation>false</generateModelDocumentation>
+                  <generateSupportingFiles>false</generateSupportingFiles>
+                  <!-- D40: без этого @Size/@Pattern/@Min в моделях не появятся. -->
+                  <enableBeanValidation>true</enableBeanValidation>
+                  <useJakartaEe>true</useJakartaEe>
+                  <modelPackage>com.hexlet.calendar.api.model</modelPackage>
+                  <apiPackage>com.hexlet.calendar.api</apiPackage>
+                  <invokerPackage>com.hexlet.calendar.api.invoker</invokerPackage>
+                  <configOptions>
+                    <useTags>true</useTags>
+                    <useSpringBoot3>true</useSpringBoot3>
+                    <openApiNullable>false</openApiNullable>
+                    <disallowAdditionalPropertiesIfNotPresent>false</disallowAdditionalPropertiesIfNotPresent>
+                  </configOptions>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

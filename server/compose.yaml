@@ -1,0 +1,55 @@
+# Локальный запуск сервера: база и сервер. Только эти два сервиса — миграции
+# выполняет сам сервер при старте, отдельной команды для них нет (см. README,
+# раздел «Кто выполняет миграции»).
+#
+#   docker compose up --build
+#
+# Все значения читаются из `.env` рядом с этим файлом. Копия образца —
+# `.env.example`; без `.env` compose поднимется на умолчаниях оттуда же.
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-calendar}
+      POSTGRES_USER: ${POSTGRES_USER:-calendar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendar}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      # Порт наружу нужен, чтобы зайти в базу извне: посмотреть данные или
+      # снять сид окна, когда локальный сценарий требует пустого календаря.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # Сервер ждёт именно готовность принимать подключения, а не то, что
+      # процесс запустился: иначе Liquibase стартует раньше, чем база встала.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-calendar} -d ${POSTGRES_DB:-calendar}"]
+      interval: 2s
+      timeout: 3s
+      # Пяти попыток достаточно на пустой машине; при нехватке ресурсов compose
+      # всё равно покажет ошибку подключения в логе сервера.
+      retries: 15
+      start_period: 5s
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-calendar}
+      POSTGRES_USER: ${POSTGRES_USER:-calendar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendar}
+      # Пусто — сид окон заводится. `!seed` — схема без окон.
+      LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+
+volumes:
+  db-data:

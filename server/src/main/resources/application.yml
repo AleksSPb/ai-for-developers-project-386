@@ -1,0 +1,44 @@
+# Конфигурация сервера. Переопределяется переменными окружения — см. .env.example
+# и compose.yaml. Здесь только умолчания, которые поднимают сервер локально.
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: calendar-server
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:calendar}
+    username: ${POSTGRES_USER:calendar}
+    password: ${POSTGRES_PASSWORD:calendar}
+
+  jpa:
+    # D12: схему создаёт Liquibase, Hibernate только проверяет её и падает на
+    # расхождении. `validate` — единственное значение, при котором ошибка в
+    # схеме видна на старте, а не в проде на данных.
+    hibernate:
+      ddl-auto: validate
+    # JPA-сессия не должна переживать запрос: иначе она утекает наружу вместе с
+    # отложенной загрузкой, а весь домен работает с уже загруженными данными.
+    open-in-view: false
+    properties:
+      hibernate:
+        # Моменты хранятся в timestamptz, а Hibernate по умолчанию читает их в
+        # зоне JVM. Читать в UTC — значит не подменять молча зону базы на зону
+        # машины: момент, однажды прочитанный со смещением, вернётся в ответе
+        # другим временем.
+        jdbc:
+          time_zone: UTC
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    # Пусто — выполняются все changeset'ы, включая сид окон. `!seed` — режим
+    # без сида: схема создаётся, окна не заводятся.
+    contexts: ${LIQUIBASE_CONTEXTS:}
+
+logging:
+  level:
+    root: INFO
+    com.hexlet.calendar: INFO
+    org.hibernate.SQL: INFO
