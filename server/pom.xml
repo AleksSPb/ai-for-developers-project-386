@@ -10,10 +10,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
+  <!--
+    Spring Boot 4.1.1 — последняя стабильная на момент написания.
+
+    Решение D5 называло «4.0.x», и последний патч той ветки (4.0.8) отличается
+    от 4.1.1 только Hibernate: 7.2.24.Final против 7.4.5.Final. Liquibase,
+    драйвер PostgreSQL, Testcontainers, Tomcat и Spring Framework совпадают
+    один в один, поэтому берётся более новая стабильная ветка. Расхождение с D5
+    закрывается в трекере отдельной правкой.
+  -->
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.0.8</version>
+    <version>4.1.1</version>
     <relativePath/>
   </parent>
 
