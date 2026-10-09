@@ -1,6 +1,6 @@
 # Сервер календаря бронирования звонков
 
-Серверная часть сервиса: Java 25, Spring Boot 4, Maven, PostgreSQL, Liquibase.
+Серверная часть сервиса: Java 25, Spring Boot 4.1.1, Maven, PostgreSQL, Liquibase.
 Контракт — [`vite-project/main.tsp`](../vite-project/main.tsp), он же источник
 правды для всего, что сервер отдаёт.
 

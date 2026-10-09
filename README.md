@@ -16,7 +16,7 @@
 **Клиент:** React 19, TypeScript, Vite, Mantine 9, React Router 8. Тесты —
 Vitest и Testing Library.
 
-**Сервер:** Java 25, Spring Boot 4, Maven, PostgreSQL, Liquibase.
+**Сервер:** Java 25, Spring Boot 4.1.1, Maven, PostgreSQL, Liquibase.
 
 ## Что внутри
 

@@ -4,7 +4,7 @@
 
 - Два модуля: клиент в `vite-project/`, сервер в `server/`. **В корне нет `package.json` и нет `pom.xml`** — npm-команды запускать из `vite-project/`, maven — из `server/`.
 - В корне только `README.md` (описание проекта), `docs/` (правила коммитов) и `.github/`.
-- Стек клиента: React 19 + TypeScript + Vite, UI на Mantine 9, тесты на Vitest + Testing Library. Стек сервера: Java 25 + Spring Boot 4 + Maven, база PostgreSQL, миграции Liquibase.
+- Стек клиента: React 19 + TypeScript + Vite, UI на Mantine 9, тесты на Vitest + Testing Library. Стек сервера: Java 25 + Spring Boot 4.1.1 + Maven, база PostgreSQL, миграции Liquibase.
 - Интерфейс, документация и комментарии — на русском.
 
 ## Команды клиента (из `vite-project/`)
