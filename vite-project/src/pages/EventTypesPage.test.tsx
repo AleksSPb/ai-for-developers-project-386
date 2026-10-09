@@ -315,14 +315,25 @@ describe('границы текстов', () => {
     const name = screen.getByLabelText('Название') as HTMLInputElement
 
     // Границы стоят в контракте; форма берёт их оттуда, иначе она отказывала бы в
-    // лишнем по одному правилу, а сервер — по другому.
-    expect(name.getAttribute('maxlength')).toBe(String(TEXT_LIMITS.name))
+    // лишнем по одному правилу, а сервер — по другому. В атрибут уходит удвоенное
+    // число: браузер меряет `maxLength` в кодовых единицах, где символ может стоять
+    // два, и поставил бы предел ниже контрактного.
+    expect(name.getAttribute('maxlength')).toBe(String(TEXT_LIMITS.name * 2))
     expect(screen.getByLabelText('Описание').getAttribute('maxlength')).toBe(
-      String(TEXT_LIMITS.description),
+      String(TEXT_LIMITS.description * 2),
     )
     expect(screen.getByLabelText('Идентификатор').getAttribute('maxlength')).toBe(
-      String(TEXT_LIMITS.id),
+      String(TEXT_LIMITS.id * 2),
     )
+
+    // Предел держит форма, а не атрибут: лишний символ не обрезается и не
+    // принимается, а счётчик стоит на нуле.
+    const atLimit = 'я'.repeat(TEXT_LIMITS.name)
+    fireEvent.change(name, { target: { value: atLimit } })
+    fireEvent.change(name, { target: { value: `${atLimit}я` } })
+
+    expect((screen.getByLabelText('Название') as HTMLInputElement).value).toBe(atLimit)
+    expect(screen.getByText('Осталось символов: 0')).toBeTruthy()
   })
 
   it('текст на пределе вводится и показывается целиком', async () => {
@@ -401,6 +412,20 @@ describe('границы текстов', () => {
     expect(
       screen.getByText(`Осталось символов: ${TEXT_LIMITS.name - typed.length}`),
     ).toBeTruthy()
+  })
+
+  it('длина считается в символах, а не в кодовых единицах', async () => {
+    renderPage()
+    await ready()
+
+    // Эмодзи стоит две кодовые единицы UTF-16 и одна точка кода. Счётчик, ведущий
+    // себя по `String.length`, урезал бы название вдвое раньше контракта: Владелец
+    // дописал бы 50 эмодзи из сотни разрешённых и увидел бы неразличимый счётчик.
+    const typed = '👍'.repeat(TEXT_LIMITS.name)
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: typed } })
+
+    expect((screen.getByLabelText('Название') as HTMLInputElement).value).toBe(typed)
+    expect(screen.getByText('Осталось символов: 0')).toBeTruthy()
   })
 })
 

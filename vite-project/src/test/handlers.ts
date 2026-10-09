@@ -1,6 +1,6 @@
 import { http, HttpResponse, type JsonBodyType } from 'msw'
 
-import { TEXT_LIMITS, TEXT_MINIMUMS } from '../app/textLimits'
+import { ID_PATTERN, TEXT_LIMITS, TEXT_MINIMUMS, textLength } from '../app/textLimits'
 
 /**
  * Заглушки сетевого слоя, написанные руками.
@@ -385,14 +385,14 @@ const sameSlot = (a: BookingBody, b: CreateBookingBody): boolean =>
  * идентификатор заводил Тип, и проверка руками показывала успех там, где
  * настоящий сервер вернул бы `422`.
  *
- * Правила взяты из `main.tsp`: `@minLength(1)` у каждого текста, `@maxLength` из
- * `app/textLimits` (его же сверяет тест контракта) и `@pattern` у идентификатора.
+ * Правила взяты из `main.tsp`, а числа и образец — из `app/textLimits`, откуда их же
+ * берёт форма: своя копия здесь разошлась бы с формой при первом же переименовании,
+ * и заглушка отвергала бы то, что форма принимает. Меру длины тоже одну — `textLength`,
+ * в точках кода, а не в кодовых единицах.
  *
  * Возвращаются **все** негодные поля сразу, а не по одному, — так обещает контракт
  * и так подсвечивает форма за один проход.
  */
-const idPattern = /^[a-z0-9-]+$/
-
 const validateEventType = (
   body: Partial<CreateEventTypeBody>,
   withId: boolean,
@@ -402,11 +402,7 @@ const validateEventType = (
   if (withId) {
     const id = body.id ?? ''
 
-    if (
-      id.length < TEXT_MINIMUMS.id ||
-      id.length > TEXT_LIMITS.id ||
-      !idPattern.test(id)
-    ) {
+    if (textLength(id) < TEXT_MINIMUMS.id || textLength(id) > TEXT_LIMITS.id || !ID_PATTERN.test(id)) {
       bad.push('id')
     }
   }
@@ -414,13 +410,13 @@ const validateEventType = (
   const name = body.name ?? ''
   const description = body.description ?? ''
 
-  if (name.length < TEXT_MINIMUMS.name || name.length > TEXT_LIMITS.name) {
+  if (textLength(name) < TEXT_MINIMUMS.name || textLength(name) > TEXT_LIMITS.name) {
     bad.push('name')
   }
 
   if (
-    description.length < TEXT_MINIMUMS.description ||
-    description.length > TEXT_LIMITS.description
+    textLength(description) < TEXT_MINIMUMS.description ||
+    textLength(description) > TEXT_LIMITS.description
   ) {
     bad.push('description')
   }
