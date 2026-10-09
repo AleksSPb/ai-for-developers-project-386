@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router'
 
-import { Alert, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Card, Group, Stack, Text, Title } from '@mantine/core'
 
 import { useApp } from '../app/useApp'
 import {
@@ -13,6 +13,7 @@ import {
 import { getGuestTimeZone } from '../app/formatTimeZone'
 import { missingSource, sourceLabel, useBookingSources } from '../app/useBookingSources'
 import { returnsToCalendar, type BookingRefusal } from '../app/bookingRefusal'
+import { usePageSources } from '../app/useApp'
 import { getDateKey, getMonthKey, type DateKey, type MonthKey } from '../domain/calendar'
 import { getSlotStatus } from '../domain/day'
 import type { Slot } from '../domain/slots'
@@ -24,6 +25,7 @@ import CalendarGrid from '../components/CalendarGrid'
 import EventTypeFromUrlCard from '../components/EventTypeFromUrlCard'
 import InfoPanel from '../components/InfoPanel'
 import SlotList from '../components/SlotList'
+import SourceAlert from '../components/SourceAlert'
 
 /**
  * Тип события приходит из адреса: гостевой ссылке его несёт Гость, и страница без
@@ -64,9 +66,17 @@ type Step = 'choose' | 'confirm' | 'done'
 const StaleTypeLink = () => <Navigate to="/book" replace />
 
 const BookingPage = ({ eventTypeId }: BookingPageProps) => {
-  const { bookings, now } = useApp()
-  const sources = useBookingSources(eventTypeId)
+  const { bookings, now, reload } = useApp()
+  const { sources, reload: reloadSources } = useBookingSources(eventTypeId)
   const timeZone = getGuestTimeZone()
+
+  /**
+   * Реестр приложения: кнопка повтора перечитывает все источники страницы.
+   *
+   * У страницы три источника, и повтор по одному оставил бы остальные старыми —
+   * гость нажал бы «Повторить» и не понял бы, почему календарь не изменился.
+   */
+  usePageSources([reload, reloadSources])
 
   const [selectedDate, setSelectedDate] = useState<DateKey | null>(null)
   const [month, setMonth] = useState<MonthKey | null>(null)
@@ -121,12 +131,9 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
     }
   }, [ready, bookings, now, timeZone])
 
-  const failure =
-    sources.windows.kind === 'отказ'
-      ? sources.windows
-      : sources.eventType.kind === 'отказ'
-        ? sources.eventType
-        : null
+  const failed =
+    sources.windows.kind === 'отказ' ||
+    sources.eventType.kind === 'отказ'
 
   // Проверка после всех хуков: если Типа нет, ни календаря, ни его пустого
   // состояния показывать нельзя — гость должен попасть на выбор.
@@ -134,13 +141,15 @@ const BookingPage = ({ eventTypeId }: BookingPageProps) => {
     return <StaleTypeLink />
   }
 
-  if (failure !== null) {
+  // Отказ любого источника останавливает все: половина календаря без Окон выглядела
+  // бы как «у Владельца нет времени», то есть как ложь о сервере. Плашка — общая с
+  // остальными страницами, иначе один отказ звучал бы по-разному в зависимости от
+  // точки входа.
+  if (failed) {
     return (
       <Stack gap="lg">
         <Title order={1}>Запись на звонок</Title>
-        <Alert color="red" title="Не удалось загрузить расписание">
-          {failure.message}
-        </Alert>
+        <SourceAlert />
       </Stack>
     )
   }

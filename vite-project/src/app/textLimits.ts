@@ -81,11 +81,11 @@ export const problemWith = (field: TextField, value: string): string | null => {
     return 'Заполните это поле'
   }
 
-  if (value.length < TEXT_MINIMUMS[field]) {
+  if (textLength(value) < TEXT_MINIMUMS[field]) {
     return `Введите не меньше ${symbol(TEXT_MINIMUMS[field])}`
   }
 
-  if (value.length > TEXT_LIMITS[field]) {
+  if (textLength(value) > TEXT_LIMITS[field]) {
     return `Введите не больше ${symbol(TEXT_LIMITS[field])}`
   }
 
@@ -101,14 +101,38 @@ export const remainingIn = (field: TextField, value: string): number =>
   TEXT_LIMITS[field] - textLength(value)
 
 /**
- * Длина в символах, а не в байтах.
+ * Длина в символах, а не в байтах и не в кодовых единицах.
  *
  * Байты означали бы, что кириллическое название упирается в предел раньше
  * латинского, а это не то, что Владелец считает написал. Символ — единица, в
  * которой человек думает о длине; она же считается одинаково для всех языков.
  *
- * Считается `.length` — той же мерой, какой браузер считает `maxLength` у поля.
- * Меры разойтись не могут: счётчик показал бы остаток, которого вводить нельзя,
- * и Владелец потерял бы символ молча.
+ * Считается **точками кода**, а не `String.length`. У эмодзи и редких иероглифов вне
+ * базовой плоскости `length` стоит два, и предел, обещанный контрактом, оказался бы
+ * вдвое ниже того, что показывает счётчик: Владелец дописал бы 60 эмодзи из сотни
+ * разрешённых и увидел бы «Осталось символов: 40», которого набрать уже нельзя.
+ * `maxLength` в контракте считается в точках кода, и мера одна на обоих концах —
+ * форма, счётчик и сервер.
  */
-export const textLength = (value: string): number => value.length
+export const textLength = (value: string): number => [...value].length
+
+/** Влезает ли значение в предел поля. */
+export const fitsIn = (field: TextField, value: string): boolean =>
+  textLength(value) <= TEXT_LIMITS[field]
+
+/**
+ * Граница, которую отдаём полю в атрибуте `maxLength`.
+ *
+ * Браузер считает этот атрибут в кодовых единицах UTF-16, где один символ может
+ * стоить два, и поставил бы предел ниже контрактного: эмодзи Владелец не дописал
+ * бы до конца, хотя контракт их разрешает. Поэтому атрибут удвоен — точка кода
+ * длиннее двух единиц не бывает, и любой годный текст в него влезает целиком.
+ *
+ * Настоящую границу держит форма, отказывая во вводе сверх `fitsIn`, а не
+ * атрибут: обрезание отняло бы конец фразы молча.
+ */
+export const TYPED_LIMITS = {
+  id: TEXT_LIMITS.id * 2,
+  name: TEXT_LIMITS.name * 2,
+  description: TEXT_LIMITS.description * 2,
+} as const

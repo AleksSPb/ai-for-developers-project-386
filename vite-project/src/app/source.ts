@@ -10,11 +10,16 @@ import { useCallback, useEffect, useState } from 'react'
  * Четвёртое состояние, «нет такого», живёт не здесь, а в источниках, где оно
  * значит что-то конкретное: на странице записи это `404` на одиночном чтении
  * Типа, и гостю полагается совсем другой экран, чем при серверном отказе.
+ *
+ * Поля с текстом у отказа нет **намеренно**: текст принадлежит приложению и живёт
+ * в `sourceText`. Держать здесь `message` из ответа значило бы дать каждой
+ * странице шанс вывести серверную строку, и одна из них рано или поздно её
+ * вывела бы.
  */
 export type SourceState<T> =
   | { kind: 'загрузка' }
   | { kind: 'готов'; value: T }
-  | { kind: 'отказ'; message: string }
+  | { kind: 'отказ' }
 
 /** Приводит ответ операции к состоянию источника, разбирая статус. */
 export const fromResponse = <T>(
@@ -25,9 +30,7 @@ export const fromResponse = <T>(
     return { kind: 'готов', value: pick(response.data as never) }
   }
 
-  const message = (response.data as { message?: string }).message
-
-  return { kind: 'отказ', message: message ?? 'Сервис временно недоступен' }
+  return { kind: 'отказ' }
 }
 
 /** Источник вместе с действием перечитывания. */
@@ -54,10 +57,10 @@ export const firstMissing = (
 /** Отказавший источник, если он есть. */
 export const firstFailure = (
   sources: Record<string, SourceState<unknown>>,
-): { name: string; message: string } | null => {
+): string | null => {
   for (const [name, state] of Object.entries(sources)) {
     if (state.kind === 'отказ') {
-      return { name, message: state.message }
+      return name
     }
   }
 

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button, Card, Group, Stack, Text, TextInput } from '@mantine/core'
 
 import { errorsFromRefusal, type FieldValues, type Refusal } from '../app/refusal'
-import { TEXT_LIMITS, type TextField } from '../app/textLimits'
+import { fitsIn, TYPED_LIMITS, type TextField } from '../app/textLimits'
 import LengthCounter from './LengthCounter'
 
 interface EventTypeFormProps {
@@ -22,10 +22,15 @@ const emptyForm = { id: '', name: '', description: '', durationMinutes: '60' }
 /**
  * Форма создания и переименования Типа события.
  *
- * Под каждым текстовым полем стоит счётчик остатка, а `maxLength` не даёт ввести
- * лишнего: обрезание молча отнимало бы текст без предупреждения, а обрезанное
- * описание сделало бы два одинаково названных Типа неразличимыми для Гостя, и он
- * не увидел бы почему.
+ * Под каждым текстовым полем стоит счётчик остатка, а лишнее форма не принимает:
+ * обрезание молча отнимало бы текст без предупреждения, а обрезанное описание
+ * сделало бы два одинаково названных Типа неразличимыми для Гостя, и он не увидел
+ * бы почему.
+ *
+ * Границу держит форма, а не атрибут `maxLength`: браузер считает его в кодовых
+ * единицах UTF-16, где символ может стоить два, и обрезал бы эмодзи там, где
+ * контракт их разрешает. Атрибут остаётся, но удвоенным — отсекает совсем
+ * непристойное значение, а счётчик, форма и сервер меряют одно и то же.
  *
  * Ничего не обрезается **и при отправке**: `submit` отдаёт то, что введено, а не
  * обрезанное до предела значение. Правило одно и не расходящееся — обрезалось бы
@@ -75,6 +80,16 @@ const EventTypeForm = ({
 
   const named = errorsFromRefusal(error, values)
 
+  /**
+   * Ввод текстового поля: лишнее форма не примет.
+   *
+   * Значение при этом **не обрезается** — оно просто не меняется, и Владелец видит
+   * счётчик на нуле. Обрезание отняло бы конец фразы молча, и отправленный текст
+   * разошёлся бы с тем, что стоит на экране.
+   */
+  const change = (field: TextField, next: string) =>
+    setValues((current) => (fitsIn(field, next) ? { ...current, [field]: next } : current))
+
   const fieldErrors = Object.fromEntries(
     Object.entries(named).filter(
       ([field]) => values[field as TextField].trim() === sent?.[field as TextField],
@@ -110,8 +125,8 @@ const EventTypeForm = ({
                 placeholder="consultation"
                 value={values.id}
                 error={fieldErrors.id}
-                maxLength={TEXT_LIMITS.id}
-                onChange={(event) => setValues({ ...values, id: event.currentTarget.value })}
+                maxLength={TYPED_LIMITS.id}
+                onChange={(event) => change('id', event.currentTarget.value)}
               />
               <LengthCounter field="id" value={values.id} />
             </Stack>
@@ -128,8 +143,8 @@ const EventTypeForm = ({
             label="Название"
             value={values.name}
             error={fieldErrors.name}
-            maxLength={TEXT_LIMITS.name}
-            onChange={(event) => setValues({ ...values, name: event.currentTarget.value })}
+            maxLength={TYPED_LIMITS.name}
+            onChange={(event) => change('name', event.currentTarget.value)}
           />
           <LengthCounter field="name" value={values.name} />
         </Stack>
@@ -139,8 +154,8 @@ const EventTypeForm = ({
             label="Описание"
             value={values.description}
             error={fieldErrors.description}
-            maxLength={TEXT_LIMITS.description}
-            onChange={(event) => setValues({ ...values, description: event.currentTarget.value })}
+            maxLength={TYPED_LIMITS.description}
+            onChange={(event) => change('description', event.currentTarget.value)}
           />
           <LengthCounter field="description" value={values.description} />
         </Stack>

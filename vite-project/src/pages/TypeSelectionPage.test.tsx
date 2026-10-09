@@ -1,9 +1,11 @@
 import { MantineProvider } from '@mantine/core'
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AppProvider } from '../app/AppProvider'
+import { SOURCE_FAILURE_TEXT } from '../app/sourceText'
 import { TEXT_LIMITS } from '../app/textLimits'
 import { server } from '../test/server'
 import TypeSelectionPage from './TypeSelectionPage'
@@ -28,12 +30,23 @@ const eventType = (overrides: Record<string, unknown> = {}) => ({
 const withTypes = (...types: unknown[]) =>
   http.get('/event-types', () => HttpResponse.json({ types }, { status: 200 }))
 
+/** Отказ на чтении: то, что страница обязана показать плашкой, а не пустотой. */
+const withFailure = () =>
+  http.get('/event-types', () =>
+    HttpResponse.json(
+      { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+      { status: 503 },
+    ),
+  )
+
 const renderPage = () =>
   render(
     <MantineProvider>
-      <MemoryRouter>
-        <TypeSelectionPage />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter>
+          <TypeSelectionPage />
+        </MemoryRouter>
+      </AppProvider>
     </MantineProvider>,
   )
 
@@ -48,11 +61,17 @@ const ready = async () => {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  vi.setSystemTime(new Date('2026-10-08T06:00:00.000Z'))
   // Длительности разные: иначе «45 мин» нашлось бы дважды и проверка ничего бы
   // не говорила о конкретной карточке.
   server.use(
     withTypes(eventType(), eventType({ id: 'review', name: 'Разбор', durationMinutes: 60 })),
   )
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('описание на границе', () => {
@@ -81,6 +100,75 @@ describe('описание на границе', () => {
 
     expect(screen.getByText('Полчаса о вашем проекте')).toBeTruthy()
     expect(screen.getByText('Час о вашем проекте')).toBeTruthy()
+  })
+})
+
+describe('отказ и повтор', () => {
+  it('тот же отказ звучит так же, как на странице записи', async () => {
+    server.use(withFailure())
+    renderPage()
+
+    // Плашка и текст общие со страницей записи. Расхождение означало бы, что гость,
+    // увидевший отказ на выборе, решит: на записи-то работает.
+    expect(await screen.findByText('Не удалось загрузить расписание')).toBeTruthy()
+    expect(screen.getByText(SOURCE_FAILURE_TEXT)).toBeTruthy()
+    expect(screen.queryByText('Сервис временно недоступен')).not.toBeNull()
+  })
+
+  it('ждёт один источник и называет один, а не три', () => {
+    renderPage()
+
+    // У страницы выбора один источник: называть надо его, а не весь набор приложения.
+    // Иначе текст обещал бы ожидание того, чего страница не ждёт.
+    expect(screen.getByText('Загружаем типы событий…')).toBeTruthy()
+  })
+
+  it('повтор перечитывает источник и показывает данные', async () => {
+    const asked = { types: 0 }
+
+    server.use(
+      http.get('/event-types', () => {
+        asked.types += 1
+        return asked.types > 1
+          ? HttpResponse.json({ types: [eventType()] }, { status: 200 })
+          : HttpResponse.json(
+              { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+              { status: 503 },
+            )
+      }),
+    )
+    renderPage()
+    await screen.findByText('Не удалось загрузить расписание')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+    // Повтор — действие гостя, а не автоматика: до клика страница молчала.
+    expect(await screen.findByText('Консультация')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull()
+  })
+
+  it('ни одного автоматического повтора без действия гостя', async () => {
+    const asked = { types: 0 }
+
+    server.use(
+      http.get('/event-types', () => {
+        asked.types += 1
+        return HttpResponse.json(
+          { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+          { status: 503 },
+        )
+      }),
+    )
+    renderPage()
+    await screen.findByText('Не удалось загрузить расписание')
+
+    // Живой экран молчит: страница не долбит сервер, который только что сказал, что
+    // не отвечает, и не выдаёт повтор за что-то, гость которого ждал.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+
+    expect(asked.types).toBe(1)
   })
 })
 

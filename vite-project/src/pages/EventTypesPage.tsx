@@ -6,6 +6,7 @@ import { eventTypesCreateEventType, eventTypeByIdUpdateEventType } from '../api/
 import type { EventTypeSummary } from '../api/generated/calendar-api'
 import type { Refusal } from '../app/refusal'
 import { useEventTypes } from '../app/useEventTypes'
+import { usePageSources } from '../app/useApp'
 import EventTypeCard from '../components/EventTypeCard'
 import EventTypeForm from '../components/EventTypeForm'
 import SourceAlert from '../components/SourceAlert'
@@ -25,6 +26,10 @@ const EventTypesPage = () => {
   // Сторожа здесь нет и не планируется: свою правку Типа Владелец видит сразу, а
   // встреча появляется от записи Гостя — на странице встреч.
   const { state: source, reload } = useEventTypes()
+
+  // Кнопка повтора после отказа обязана знать про этот источник: страница ничего не
+  // меняет сама, но гость после отказа нажимает «Повторить» именно здесь.
+  usePageSources([reload])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formError, setFormError] = useState<Refusal | null>(null)
 
@@ -84,7 +89,7 @@ const EventTypesPage = () => {
     return (
       <Stack gap="lg">
         {header}
-        <SourceAlert message={source.message} />
+        <SourceAlert />
       </Stack>
     )
   }

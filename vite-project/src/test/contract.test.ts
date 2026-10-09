@@ -1,7 +1,7 @@
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 import specSource from '../../contract/openapi.yaml?raw'
-import { TEXT_LIMITS, TEXT_MINIMUMS } from '../app/textLimits'
+import { ID_PATTERN, TEXT_LIMITS, TEXT_MINIMUMS, type TextField } from '../app/textLimits'
 import { stubbedResponses } from './handlers'
 
 /**
@@ -120,7 +120,7 @@ describe('заглушки против контракта', () => {
  * одному правилу, а сервер отверг бы по другому, и Владелец узнал бы об этом
  * отказом вместо счётчика под полем.
  */
-type Property = { minLength?: number; maxLength?: number }
+type Property = { minLength?: number; maxLength?: number; pattern?: string }
 
 /** Схемы контракта: свойства каждой модели лежат под `properties`. */
 const schemas = (): Record<string, { properties?: Record<string, Property> }> =>
@@ -140,17 +140,32 @@ describe('пределы текстов Типа события', () => {
    */
   const models = ['EventTypeSummary', 'CreateEventTypeRequest', 'UpdateEventTypeRequest']
 
+  /**
+   * Текстовые поля модели.
+   *
+   * У переименования идентификатора нет: он неизменен после создания, и менять его
+   * нельзя. Список берётся отсюда, а не повторяется в каждом тесте, — иначе второе
+   * исключение забыли бы и сверка молча проверяла бы не то поле.
+   */
+  const textFieldsOf = (model: string): readonly TextField[] =>
+    model === 'UpdateEventTypeRequest' ? ['name', 'description'] : ['id', 'name', 'description']
+
+  /** Модели, где идентификатор есть: у переименования его нет. */
+  const withId = models.filter((model) => textFieldsOf(model).includes('id'))
+
   it.each(models)('у %s стоит верхняя граница у всех трёх текстов', (model) => {
     const properties = schemas()[model]?.properties
 
-    for (const field of ['id', 'name', 'description'] as const) {
-      // Идентификатора нет у переименования: он неизменен, и менять его нельзя.
-      if (model === 'UpdateEventTypeRequest' && field === 'id') {
-        continue
-      }
-
+    for (const field of textFieldsOf(model)) {
       expect(properties?.[field]?.maxLength, `${model}.${field}`).toBe(TEXT_LIMITS[field])
     }
+  })
+
+  it.each(withId)('образец идентификатора в %s совпадает с тем, чем проверяет форма', (model) => {
+    // Образец объявлен один раз, в `app/textLimits`, и заглушка берёт его оттуда
+    // же. Расхождение с контрактом означало бы, что форма отвергает идентификатор,
+    // который сервер считает годным, и наоборот.
+    expect(schemas()[model]?.properties?.id?.pattern).toBe(ID_PATTERN.source)
   })
 
   it('предел идентификатора меньше предела названия, а названия — описания', () => {
@@ -161,12 +176,7 @@ describe('пределы текстов Типа события', () => {
     expect(TEXT_LIMITS.name).toBeLessThan(TEXT_LIMITS.description)
   })
 
-  it.each(models)('у %s нижняя граница идентификатора совпадает с договорённостью', (model) => {
-    if (model === 'UpdateEventTypeRequest') {
-      // Идентификатора в переименовании нет: он неизменен, и менять его нельзя.
-      return
-    }
-
+  it.each(withId)('у %s нижняя граница идентификатора совпадает с договорённостью', (model) => {
     // Ниже трёх символов адрес нечитаем, а однобуквенные идентификаторы первыми же
     // кончаются: завести второй Тип, назвав его `b`, Владелец не сможет.
     expect(schemas()[model]?.properties?.id?.minLength).toBe(TEXT_MINIMUMS.id)

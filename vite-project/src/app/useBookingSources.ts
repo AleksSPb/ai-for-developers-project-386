@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { availabilityGetWindows, eventTypeByIdGetEventType } from '../api/generated/calendar-api'
+import { SOURCE_LABELS } from './sourceText'
 import type { TimeRange } from '../domain/range'
 import type { SourceState } from './source'
 
@@ -25,7 +26,7 @@ export type EventTypeSource =
   | { kind: 'загрузка' }
   | { kind: 'готов'; value: { id: string; name: string; description: string; durationMinutes: number } }
   | { kind: 'нет типа' }
-  | { kind: 'отказ'; message: string }
+  | { kind: 'отказ' }
 
 export interface BookingSources {
   windows: SourceState<TimeRange[]>
@@ -33,10 +34,7 @@ export interface BookingSources {
 }
 
 /** Что именно не пришло: имя источника показывается в тексте загрузки. */
-export const sourceLabel: Record<'windows' | 'eventType', string> = {
-  windows: 'окна приёма',
-  eventType: 'тип события',
-}
+export const sourceLabel = SOURCE_LABELS
 
 /** Первый непришедший источник, либо `null`, когда всё готово. */
 export const missingSource = (sources: BookingSources): keyof BookingSources | null => {
@@ -63,7 +61,7 @@ const readWindows = async (): Promise<SourceState<TimeRange[]>> => {
     }
   }
 
-  return { kind: 'отказ', message: response.data.message }
+  return { kind: 'отказ' }
 }
 
 const readEventType = async (id: string): Promise<EventTypeSource> => {
@@ -88,20 +86,27 @@ const readEventType = async (id: string): Promise<EventTypeSource> => {
     return { kind: 'нет типа' }
   }
 
-  return { kind: 'отказ', message: response.data.message }
+  return { kind: 'отказ' }
 }
 
 /**
- * Окна приёма и Тип события страницы.
+ * Окна приёма и Тип события страницы — вместе с перечитыванием.
  *
  * Оба источника читаются параллельно, а не по цепочке: загрузка окна и чтение
  * Типа независимы, и по очереди они удвоили бы время до первого ответа.
+ *
+ * Перечитывание **не** возвращает источники в состояние «загрузка»: кнопка
+ * повтора должна оставить на экране то, что уже показано, пока не пришёл новый
+ * ответ. Прежние данные убирает только пришедший отказ — см. `source.ts`.
  */
-export const useBookingSources = (eventTypeId: string): BookingSources => {
+export const useBookingSources = (
+  eventTypeId: string,
+): { sources: BookingSources; reload: () => void } => {
   const [sources, setSources] = useState<BookingSources>({
     windows: { kind: 'загрузка' },
     eventType: { kind: 'загрузка' },
   })
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let isCurrent = true
@@ -124,7 +129,9 @@ export const useBookingSources = (eventTypeId: string): BookingSources => {
     return () => {
       isCurrent = false
     }
-  }, [eventTypeId])
+  }, [eventTypeId, version])
 
-  return sources
+  const reload = useCallback(() => setVersion((current) => current + 1), [])
+
+  return { sources, reload }
 }

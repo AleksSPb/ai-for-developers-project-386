@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AppProvider } from '../app/AppProvider'
 import { server } from '../test/server'
 import MeetingsPage from './MeetingsPage'
 
@@ -64,10 +65,12 @@ const LocationProbe = () => <span>{`адрес:${useLocation().search}`}</span>
 const renderAt = (address = '/meetings') =>
   render(
     <MantineProvider>
-      <MemoryRouter initialEntries={[address]}>
-        <LocationProbe />
-        <MeetingsPage />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter initialEntries={[address]}>
+          <LocationProbe />
+          <MeetingsPage />
+        </MemoryRouter>
+      </AppProvider>
     </MantineProvider>,
   )
 
@@ -148,7 +151,7 @@ describe('источники страницы', () => {
     renderPage()
     await screen.findByText('Иван')
 
-    expect(asked.bookings).toBe(1)
+    expect(asked.bookings).toBeGreaterThan(0)
     expect(asked.types).toBe(1)
     // Владелец не бронирует и расписание не смотрит.
     expect(asked.windows).toBe(0)
@@ -323,7 +326,10 @@ describe('пятиминутный сторож', () => {
       http.get('/event-types', () => HttpResponse.json({ types: [eventType()] }, { status: 200 })),
     )
     renderPage()
-    await waitFor(() => expect(asked.bookings).toBe(1))
+    await waitFor(() => expect(asked.bookings).toBeGreaterThan(0))
+    // Отсчёт отсюда: провайдер читает список Броней при монтировании, и его чтение не
+    // имеет отношения к сторожу страницы.
+    const before = asked.bookings
 
     // Встреча появляется от записи Гостя, а не от правки Владельца: без сторожа он
     // узнал бы о ней только после ручного обновления.
@@ -331,7 +337,7 @@ describe('пятиминутный сторож', () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000)
     })
 
-    expect(asked.bookings).toBe(2)
+    expect(asked.bookings).toBe(before + 1)
   })
 
   it('перечитывание не стирает список на экране', async () => {
@@ -348,6 +354,117 @@ describe('пятиминутный сторож', () => {
     expect(screen.getByText('Иван')).toBeTruthy()
   })
 
+  it('при отказе сторож останавливается', async () => {
+    const asked = { types: 0 }
+
+    const typesOk = () =>
+      http.get('/event-types', () => {
+        asked.types += 1
+        return HttpResponse.json({ types: [eventType()] }, { status: 200 })
+      })
+
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([booking()], { status: 200 })),
+      typesOk(),
+    )
+    renderPage()
+    await screen.findByText('Иван')
+    const before = asked.types
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    // Сторож работает: он и перечитывает встречи каждые пять минут.
+    expect(asked.types).toBe(before + 1)
+
+    // Теперь источник отказал. Держать опрос, когда данные неизвестны, незачем: он
+    // долбит сервер, который только что сказал, что не отвечает, и не приносит
+    // ничего. Счётчик переезжает в отказывающую заглушку, иначе мы считали бы
+    // удачные попытки, а не ходит ли кто-то на сервер.
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([booking()], { status: 200 })),
+      http.get('/event-types', () => {
+        asked.types += 1
+        return HttpResponse.json(
+          { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+          { status: 503 },
+        )
+      }),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    await screen.findByText('Не удалось загрузить расписание')
+    const atFailure = asked.types
+
+    // Два полных срока сторожа — и ни одного запроса.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+    })
+
+    expect(asked.types).toBe(atFailure)
+  })
+
+  it('при отказе прежние встречи убраны совсем', async () => {
+    // Сначала успех, потом отказ — и данных на экране не остаётся. Строка, показанная
+    // минуту назад, выглядела бы актуальной, и Владелец принял бы решение по
+    // устаревшим данным, не зная об этом.
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([booking()], { status: 200 })),
+      http.get('/event-types', () => HttpResponse.json({ types: [eventType()] }, { status: 200 })),
+    )
+    renderPage()
+    await screen.findByText('Иван')
+
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([booking()], { status: 200 })),
+      http.get('/event-types', () =>
+        HttpResponse.json(
+          { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+          { status: 503 },
+        ),
+      ),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    await screen.findByText('Не удалось загрузить расписание')
+    // Устаревшая строка без пометки хуже отсутствия строки: она выглядит
+    // актуальной.
+    expect(screen.queryByText('Иван')).toBeNull()
+  })
+
+  it('повтор после отказа приносит данные обратно', async () => {
+    renderPage()
+    await screen.findByText('Иван')
+
+    server.use(
+      http.get('/bookings', () => HttpResponse.json([booking()], { status: 200 })),
+      http.get('/event-types', () =>
+        HttpResponse.json(
+          { code: 'service_unavailable', message: 'Сервис временно недоступен' },
+          { status: 503 },
+        ),
+      ),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+    await screen.findByText('Не удалось загрузить расписание')
+
+    // Повтор — единственное, что возвращает данные: без действия гостя страница
+    // молчит, сторож остановлен.
+    server.resetHandlers()
+    withSources([booking()])
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+    expect(await screen.findByText('Иван')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull()
+  })
+
   it('в скрытой вкладке не ходит на сервер', async () => {
     const asked = { bookings: 0 }
     server.use(
@@ -358,7 +475,8 @@ describe('пятиминутный сторож', () => {
       http.get('/event-types', () => HttpResponse.json({ types: [eventType()] }, { status: 200 })),
     )
     renderPage()
-    await waitFor(() => expect(asked.bookings).toBe(1))
+    await waitFor(() => expect(asked.bookings).toBeGreaterThan(0))
+    const before = asked.bookings
 
     // Браузер, который Владелец закрыл, не должен делать запросы за него.
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
@@ -366,6 +484,6 @@ describe('пятиминутный сторож', () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000)
     })
 
-    expect(asked.bookings).toBe(1)
+    expect(asked.bookings).toBe(before)
   })
 })

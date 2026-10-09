@@ -108,14 +108,18 @@ describe('устаревшая ссылка', () => {
     expect(screen.queryByRole('heading', { name: 'На что записаться?' })).toBeNull()
   })
 
-  it('прочий отказ остаётся отказом и показывает текст сервера', async () => {
+  it('прочий отказ остаётся отказом и говорит текстом приложения', async () => {
     // 503 — это «данные неизвестны», и гостю полагается красная плашка, а не выбор.
     server.use(withType(503), withTypeList(eventType))
     renderAt('/book/consultation')
 
-    expect(await screen.findByText('Тип события не найден')).toBeTruthy()
-    expect(screen.getByText('Не удалось загрузить расписание')).toBeTruthy()
+    expect(await screen.findByText('Не удалось загрузить расписание')).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'На что записаться?' })).toBeNull()
+    // Плашка общая со всеми страницами и говорит своим текстом: тот же отказ на
+    // странице выбора звучал бы иначе, и гость решил бы, что сломалось только то
+    // место, откуда он пришёл.
+    expect(screen.getByText('Сервис временно недоступен')).toBeTruthy()
+    expect(screen.queryByText('Тип события не найден')).toBeNull()
   })
 
   it('выбор при устаревшей ссылке показывает настоящие Типы, а не «пусто»', async () => {

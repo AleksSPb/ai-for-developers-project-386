@@ -1,6 +1,7 @@
 import { Stack, Text, Title } from '@mantine/core'
 
 import { useEventTypes } from '../app/useEventTypes'
+import { usePageSources } from '../app/useApp'
 import EventTypeChoice from '../components/EventTypeChoice'
 import SourceAlert from '../components/SourceAlert'
 
@@ -17,8 +18,11 @@ import SourceAlert from '../components/SourceAlert'
  */
 const TypeSelectionPage = () => {
   // Перечитывать источник здесь нечем: страница ничего не меняет, и сторож на ней
-  // только ходил бы по серверу без причины.
-  const { state: source } = useEventTypes()
+  // только ходил бы по серверу без причины. А вот кнопка повтора после отказа
+  // обязана знать про этот источник — иначе гость нажал бы её в пустоту.
+  const { state: source, reload } = useEventTypes()
+
+  usePageSources([reload])
 
   const header = <Title order={1}>Запись на звонок</Title>
 
@@ -28,7 +32,7 @@ const TypeSelectionPage = () => {
     return (
       <Stack gap="lg">
         {header}
-        <SourceAlert message={source.message} />
+        <SourceAlert />
       </Stack>
     )
   }
