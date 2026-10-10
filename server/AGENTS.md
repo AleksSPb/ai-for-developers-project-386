@@ -8,9 +8,8 @@
 Выполняются из `server/`:
 
 ```bash
-mvn verify             # сборка и тесты
+mvn verify             # сборка и тесты; модели API генерируются на лету
 mvn spring-boot:run    # запуск против своей базы
-mvn -Pmodels generate-sources   # сгенерировать модели API из спецификации
 docker compose up      # база и сервер; инструкция в server/README.md
 ```
 
@@ -41,6 +40,16 @@ docker compose up      # база и сервер; инструкция в serve
 - **Локальный Maven может быть 3.6.x, а сервер требует 3.9.x.** Сборка идёт
   через Docker-образ `maven:3.9-eclipse-temurin-25`, который зашит в
   `server/Dockerfile`; при расхождении версий проверяйте сборку в этом образе.
+- **Модели API генерируются в каждой сборке** из
+  `vite-project/contract/openapi.yaml` (коммитится, Node не нужен). Плагин в
+  дефолтном билде намеренно: с импортом `api.model` слоями `mvn verify` без
+  моделей не идёт, а профиль это только прятал. Контракт правится в
+  `vite-project/main.tsp`, потом пересобирается (`npm run contract` во фронте).
+- **Генератор требует двух флагов, которые молча игнорируются рядом.**
+  `useBeanValidation` и `documentationProvider` живут в `configOptions`, а не
+  среди параметров плагина; вне `configOptions` D40 (@Size/@Pattern) работает
+  «вроде бы», а `swagger-annotations` тащится на classpath. `generatorName:
+  java` — не наш: это клиентские модели под Gson.
 - **Миграции лежат в папке версии** (`src/main/resources/db/changelog/0.0.1/`).
   Папка названа версией `pom.xml`, в чей релиз попали её changeset'ы; правку в
   уже выпущенную папку не добавляют.
