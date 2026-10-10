@@ -35,8 +35,7 @@ import jakarta.persistence.EntityManager;
  * {@link Integrity}: имена ограничений читаются, пока транзакция открыта.
  * Отсюда требование явного {@code flush} (приехало из #82): без него INSERT
  * уходит на commit, исключение прилетает НЕ из-под {@code try} правил, и гость
- * с занятым слотом получает 500 вместо 409. Наблюдение — в {@code
- * BookingFlushObservationTest}.
+ * с занятым слотом получает 500 вместо 409. Наблюдение — в {@code ApiOperationsIT}.
  */
 @Service
 public class BookingService {

@@ -46,8 +46,11 @@ import com.hexlet.calendar.service.EventTypeService;
  * <p>Второе наблюдение, которое даёт только такой тест: шаг «прошлое» стоит
  * РАНЬШЕ шага «длительность» (D32 в редакции #81) — видно по {@code verify}:
  * за типом событий репозиторий не идёт вовсе.
+ *
+ * <p>Уровень 1 пирамиды (#102). Суффикс {@code Unit} в имени файла — то же, что
+ * уровень: surefire гоняет его первым execution'ом, до контекста и контейнера.
  */
-class RulesWithoutDbTest {
+class RulesWithoutDbUnit {
 
     private static final Instant NOW = Instant.parse("2026-10-09T09:00:00Z");
     private static final Clock FIXED = Clock.fixed(NOW, ZoneOffset.UTC);

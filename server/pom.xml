@@ -210,6 +210,81 @@
           </execution>
         </executions>
       </plugin>
+
+      <!--
+        Уровни тестов пирамиды (#102), прогоняются по порядку цены.
+
+        Уровень — это суффикс имени файла, а не аннотация: `*Unit` — уровень 1
+        (чистый JUnit, без контекста), `*Test` — уровень 2 (Spring-контекст,
+        хранилище подменено моками), `*IT` — уровень 3 (контекст + настоящий
+        Postgres в Testcontainers). Меток нет намеренно: забытая аннотация не
+        превратит тест в молча пропущенный, а неверный суффикс видно глазами.
+
+        Порядок держат не только маски, но и фазы: surefire гоняет уровни 1 и 2
+        в фазе `test` двумя execution'ами подряд (сначала дешёвый), failsafe —
+        уровень 3 в фазе `integration-test`. Упавший дешёвый уровень роняет
+        сборку до подъёма контейнера, и сразу видно: сломалось правило или база.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <executions>
+          <!--
+            Дефолтный прогон выключен: он запустил бы всё подряд, мимо порядка
+            «сначала уровень 1, потом 2». Прогон целиком — два execution'а ниже.
+          -->
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+          </execution>
+          <execution>
+            <id>level-1</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/*Unit.java</include>
+              </includes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>level-2</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/*Test.java</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Failsafe по умолчанию берёт `**/IT*.java`, `**/*IT.java`, `**/*ITCase.java` —
+        то есть `*IT` уже попадает в прогон без настройки. `skipAfterFailureCount=1`:
+        упавший интеграционный тест роняет весь прогон уровня 3, не гоняя остальные
+        контейнерные тесты впустую.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <skipAfterFailureCount>1</skipAfterFailureCount>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>
