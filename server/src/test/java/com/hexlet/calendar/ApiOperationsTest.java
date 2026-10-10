@@ -364,9 +364,9 @@ class ApiOperationsTest {
     @DisplayName("каждый механизм белого списка D38 даёт 503 service_unavailable")
     void everyWhitelistMechanismIs503(Class<? extends Exception> mechanism) {
         // Здесь мок уместен: механизм ЗАДАН белым списком, и вопрос в том, сводит ли
-        // advice каждый из них к одному телу. Соответствие «умершая база приходит
-        // именно этим классом» — не вопрос предположения, а наблюдение, и оно
-        // остаётся за контейнером в StorageFailureTest.
+        // advice каждый из них к одному телу. А вот «умершая база приходит именно
+        // этим классом» — не вопрос предположения, а наблюдение, и оно снято
+        // решением владельца: проверки нет вовсе (см. #102).
         var response = advice.unavailable(exceptionOf(mechanism));
 
         assertThat(response.getStatusCode().value()).isEqualTo(503);
