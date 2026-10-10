@@ -9,6 +9,11 @@ name: release-please
 #      («untagged, merged release PRs outstanding»), а createReleases() находит
 #      смерженный PR с меткой autorelease: pending и ставит тег + GitHub Release.
 # Автотриггера на push в main нет, поэтому без второго запуска тег не появится.
+#
+# В release-please-config.json сейчас стоит ВРЕМЕННЫЙ `last-release-sha` на коммит
+# `v0.0.1`: он переносит уже выпущенный тег `v0.0.1` на схему с компонентом в имени
+# (`vite-project-v…`, `server-v…`), иначе release-please не найдёт прошлый релиз.
+# Снять ключ после того, как первый релизный PR смержен и теги поставлены.
 on:
   workflow_dispatch:
 

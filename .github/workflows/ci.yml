@@ -1,13 +1,16 @@
 name: CI
 
-# Тесты и линтер на каждый push. Отдельный от hexlet-check.yml workflow:
+# Тесты и линтер на каждый push. Два джоба: фронтовый (внутри — шаг проверки
+# контракта) и серверный (`mvn verify`). Отдельный от hexlet-check.yml workflow:
 # тот трогать нельзя (см. AGENTS.md), он гоняет тесты Хекслета.
 on:
   push:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    # Образ закреплён, а не `-latest`: переезд на 26.04 поднял бы версии
+    # инструментов раннера (в том числе Maven у серверного джоба) без правки кода.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         # package.json живёт в vite-project/, в корне репозитория его нет
@@ -24,6 +27,19 @@ jobs:
       - name: Установка зависимостей
         run: npm ci
 
+      # Контракт — источник правды (`main.tsp`), `openapi.yaml` коммитится.
+      # Пересобираем и падаем, если закоммиченный файл разошёлся с источником:
+      # иначе правка `main.tsp` без пересборки доедет до main молча.
+      #
+      # Проверки ограничены каталогом `contract`: пересборка детерминирована,
+      # нормализовать нечего, а `git diff` не видит новые непроиндексированные
+      # файлы — их ловит пустой `git status --porcelain`.
+      - name: Контракт в синхроне с main.tsp
+        run: |
+          npm run contract
+          git diff --exit-code -- contract
+          test -z "$(git status --porcelain -- contract)"
+
       - name: Линтер
         run: npm run lint
 
@@ -35,3 +51,31 @@ jobs:
       # следующем изменении у того, кто первым соберётся локально.
       - name: Сборка
         run: npm run build
+
+  # Серверный джоб. Node и контракт ему не нужны: `openapi.yaml` закоммичен,
+  # а профиль `models` в дефолтную сборку не входит.
+  mvn-verify:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+
+      # JDK 25 (D6). `cache: maven` кэширует ~/.m2 (D51).
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: server/pom.xml
+
+      # Maven берётся у раннера (3.9.x) и не пинится: строгого совпадения с
+      # образом `maven:3.9-eclipse-temurin-25` из Dockerfile нет, общая линия
+      # 3.9 + Temurin 25. Образ остаётся локальным запасным путём для системного
+      # Maven 3.6.x.
+      #
+      # Testcontainers нужен докер-демон хоста, поэтому джоба идёт на хосте, а не
+      # внутри образа `maven`.
+      - name: Сборка и тесты
+        run: mvn -B verify
