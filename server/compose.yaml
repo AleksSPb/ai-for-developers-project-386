@@ -34,8 +34,10 @@ services:
 
   server:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # Контекст — корень репозитория: модели API генерируются при сборке из
+      # `vite-project/contract/openapi.yaml`, и без него `mvn package` не идёт.
+      context: ..
+      dockerfile: server/Dockerfile
     depends_on:
       db:
         condition: service_healthy

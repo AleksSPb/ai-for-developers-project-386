@@ -12,6 +12,22 @@ spring:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:calendar}
     username: ${POSTGRES_USER:calendar}
     password: ${POSTGRES_PASSWORD:calendar}
+    hikari:
+      # D60: 503 обязан наступить за конечное время. Дефолт Hikari — 30 секунд,
+      # а браузер оборвёт запрос раньше, и гость не увидит ничего.
+      connection-timeout: 5000
+      # Таймауты на стороне PostgreSQL, без единиц = миллисекунды.
+      #
+      # Именно SET, а не SET LOCAL: последний сбрасывается на конце транзакции,
+      # и тогда величины действовали бы только внутри той транзакции, которая
+      # их задала, а следующая получила бы дефолт базы (statement_timeout = 0,
+      # то есть бесконечность).
+      #
+      # lock_timeout меньше statement_timeout не по вкусу: проигравшая гонка за
+      # слот ждёт блокировку, а не выполняет долгий SELECT. Без lock_timeout
+      # сработал бы statement_timeout и отдал 503 вместо 409 — ровно то, что
+      # запрещали #82 и #83.
+      connection-init-sql: "SET statement_timeout = 10000; SET lock_timeout = 2000"
 
   jpa:
     # D12: схему создаёт Liquibase, Hibernate только проверяет её и падает на
