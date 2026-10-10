@@ -8,6 +8,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Modifier;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,17 +25,27 @@ import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.CleanupFailureDataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.dao.QueryTimeoutException;
+import org.springframework.dao.TransientDataAccessResourceException;
+import org.springframework.dao.UncategorizedDataAccessException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -281,7 +294,7 @@ class ApiOperationsTest {
 
         assertThat(withoutFlush).isNotNull();
         assertThat(withoutFlush).isNotInstanceOf(Refusal.class);
-        assertThat(handledByAdvice()).noneMatch(type -> type.isInstance(withoutFlush));
+        assertThat(unavailableMechanisms()).noneMatch(type -> type.isInstance(withoutFlush));
     }
 
     @Test
@@ -307,7 +320,7 @@ class ApiOperationsTest {
                 .isEqualTo(Refusal.Kind.EVENT_TYPE_EXISTS);
 
         // Ни одно из них не в белом списке 503: целостность — не недоступность.
-        assertThat(handledByAdvice()).noneMatch(type -> type
+        assertThat(unavailableMechanisms()).noneMatch(type -> type
                 .isAssignableFrom(org.springframework.dao.DataIntegrityViolationException.class));
     }
 
@@ -334,16 +347,54 @@ class ApiOperationsTest {
                 jdbc.queryForObject("SELECT pg_sleep(11)", Object.class));
 
         assertThat(thrown).isInstanceOf(QueryTimeoutException.class);
-        assertThat(handledByAdvice()).contains(QueryTimeoutException.class);
+    }
 
-        // Вторая половина той же цепочки: раз исключение в белом списке, advice
-        // обязана отдать 503 с телом контракта. Проверяется напрямую, потому что
-        // операции контракта долгих запросов не содержат — гонять настоящий HTTP
-        // ради этого нечем.
-        var response = advice.unavailable((Exception) thrown);
+    @Test
+    @DisplayName("список проверяемых механизмов совпадает с перечнем в advice")
+    void testedWhitelistIsTheWholeWhitelist() {
+        // Без этого параметризованный тест проверял бы только тех, кого перечислил
+        // тест: механизм, добавленный в advice, остался бы непроверенным, и тест
+        // промолчал бы. Здесь он падает на расхождении.
+        assertThat(unavailableMechanisms())
+                .containsExactlyInAnyOrderElementsOf(whitelist().toList());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("whitelist")
+    @DisplayName("каждый механизм белого списка D38 даёт 503 service_unavailable")
+    void everyWhitelistMechanismIs503(Class<? extends Exception> mechanism) {
+        // Здесь мок уместен: механизм ЗАДАН белым списком, и вопрос в том, сводит ли
+        // advice каждый из них к одному телу. Соответствие «умершая база приходит
+        // именно этим классом» — не вопрос предположения, а наблюдение, и оно
+        // остаётся за контейнером в StorageFailureTest.
+        var response = advice.unavailable(exceptionOf(mechanism));
+
         assertThat(response.getStatusCode().value()).isEqualTo(503);
         assertThat(((ServiceUnavailableError) response.getBody()).getCode())
                 .isEqualTo(ServiceUnavailableError.CodeEnum.SERVICE_UNAVAILABLE);
+        assertThat(((ServiceUnavailableError) response.getBody()).getMessage()).isNotBlank();
+    }
+
+    /**
+     * Перечень D38 в тесте, а не только в advice.
+     *
+     * <p>Список задан здесь намеренно отдельно от аннотации {@code @ExceptionHandler}:
+     * если белый список расширится в advice, тест упадёт на «механизм без проверки»,
+     * а не промолчит. Обе стороны списка — источник правды, и разойтись они не
+     * должны молча.
+     */
+    private static Stream<Class<? extends Exception>> whitelist() {
+        return Stream.of(
+                DataAccessResourceFailureException.class,
+                CannotGetJdbcConnectionException.class,
+                TransientDataAccessResourceException.class,
+                CannotCreateTransactionException.class,
+                QueryTimeoutException.class,
+                // Абстрактный: в белом списке стоит сам класс, а создать его нельзя.
+                // Advice ловит по типу, поэтому для проверки подходит любой подкласс,
+                // и ниже это отдельно оговорено.
+                UncategorizedDataAccessException.class,
+                CleanupFailureDataAccessException.class);
     }
 
     // — helpers —
@@ -361,10 +412,52 @@ class ApiOperationsTest {
                 : Integrity.refusalOf(thrown).kind();
     }
 
-    /** Что именно advice готова отдать в 503: перечень D38, а не супертип. */
-    private Set<Class<?>> handledByAdvice() {
-        return Arrays.stream(ApiAdvice.class.getDeclaredMethods())
-                .filter(method -> method.isAnnotationPresent(ExceptionHandler.class))
+    /**
+     * Исключение данного класса для проверки белого списка.
+     *
+     * <p>Пустого конструктора нет ни у одного из семи механизмов — проверено
+     * рефлексией, а не предположено. Берётся конструктор с наименьшим числом
+     * аргументов, недостающие заполняются заглушками: `String` — осмысленным
+     * текстом, остальное — `null`. Тесту важно, что advice отдаёт 503 для КЛАССА,
+     * а не то, что он умеет создавать этот класс.
+     */
+    private static Exception exceptionOf(Class<? extends Exception> declared) {
+        // `UncategorizedDataAccessException` абстрактен: создать его нельзя, а
+        // advice ловит по типу, поэтому проверяется конкретный подкласс. Отдельно
+        // оговорено, чтобы «проверен весь список» не читалось как «проверен каждый
+        // класс буквально» — экземпляр всё равно подставляет подкласс.
+        Class<?> instantiable = Modifier.isAbstract(declared.getModifiers())
+                ? InvalidDataAccessResourceUsageException.class
+                : declared;
+
+        var constructor = Arrays.stream(instantiable.getDeclaredConstructors())
+                .min(Comparator.comparingInt(Constructor::getParameterCount))
+                .orElseThrow(() -> new AssertionError(
+                        "Нет ни одного конструктора у " + instantiable.getSimpleName()));
+
+        Object[] arguments = Arrays.stream(constructor.getParameterTypes())
+                .map(type -> type == String.class ? "проверка белого списка D38" : null)
+                .toArray();
+
+        try {
+            constructor.setAccessible(true);
+            return (Exception) constructor.newInstance(arguments);
+        } catch (ReflectiveOperationException notCreatable) {
+            throw new AssertionError("Не удалось создать " + instantiable.getSimpleName(), notCreatable);
+        }
+    }
+
+    /**
+     * Ровно те классы, которые advice отдаёт в 503 — перечень D38.
+     *
+     * <p>Берётся ТОЛЬКО обработчик `unavailable`: у advice их несколько, и
+     * `Refusal` с `MethodArgumentNotValidException` относятся к 422 и 409, а не к
+     * отказу хранилища. Смешивать их здесь нельзя — сравнение со списком иначе
+     * всегда расходилось бы.
+     */
+    private Set<Class<?>> unavailableMechanisms() {
+        return Stream.of(ApiAdvice.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("unavailable"))
                 .flatMap(method -> Arrays.stream(
                         method.getAnnotation(ExceptionHandler.class).value()))
                 .collect(Collectors.toSet());
