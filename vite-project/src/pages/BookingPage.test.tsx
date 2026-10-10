@@ -628,6 +628,53 @@ describe('отказ уводит гостя от формы', () => {
     expect(screen.queryByText('Значение не подходит')).toBeNull()
   })
 
+  it('отказ из-за длительности уводит к выбору дня, а не ищет негодное поле', async () => {
+    postWith(422, {
+      code: 'validation_failed',
+      message: 'Проверка не прошла',
+      fields: ['timeRange'],
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    // Сервер отвечает «проверка не прошла», но виноват не ввод гостя: интервал не
+    // совпал с длительностью Типа, а гость выбрал Слот из сетки. Сказать ему
+    // «Проверьте имя и почту» значило бы отправить искать поле интервала,
+    // которого на форме нет, — и форма осталась бы с верно введёнными данными.
+    expect(await screen.findByText(/длительн/i)).toBeTruthy()
+    expect(screen.queryByText('Проверьте имя и почту')).toBeNull()
+
+    // Править в форме нечего: длина Слота задана Типом, а не вводом. Возврат к
+    // выбору — единственное действие, которое может дать успех.
+    expect(screen.getByText('Статус слотов')).toBeTruthy()
+    expect(screen.queryByLabelText('Имя')).toBeNull()
+    expect(screen.queryByText('Значение не подходит')).toBeNull()
+  })
+
+  it('незнакомое имя поля не отправляет гостя править введённые поля', async () => {
+    postWith(422, {
+      code: 'validation_failed',
+      message: 'Проверка не прошла',
+      fields: ['somethingNew'],
+    })
+
+    render(storageWith())
+    await awaitSources()
+    await submitAs()
+
+    // Подсветить нечего: такого поля на форме нет. Молча ушедшее имя выглядело бы
+    // как «проверка прошла, потому что отмечать было нечего», поэтому текст
+    // признаёт, что запись не прошла, и не называет виноватым имя или почту.
+    expect(await screen.findByText('Запись не прошла проверку — попробуйте ещё раз')).toBeTruthy()
+    expect(screen.queryByText('Проверьте имя и почту')).toBeNull()
+
+    // Форма остаётся: неизвестная причина может уйти сама или при повторе.
+    expect(screen.getByLabelText('Имя')).toBeTruthy()
+    expect(screen.queryByText('Значение не подходит')).toBeNull()
+  })
+
   it('ошибка проверки данных оставляет форму и подсвечивает поля', async () => {
     postWith(422, {
       code: 'validation_failed',
