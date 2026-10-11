@@ -27,6 +27,7 @@ import com.hexlet.calendar.repository.EventTypeRepository;
 import com.hexlet.calendar.repository.WindowRepository;
 import com.hexlet.calendar.service.BookingService;
 import com.hexlet.calendar.service.EventTypeService;
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -60,6 +61,9 @@ class RulesWithoutDbUnit {
   private final WindowRepository windows = mock(WindowRepository.class);
   private final EventTypeRepository types = mock(EventTypeRepository.class);
   private final BookingRepository bookings = mock(BookingRepository.class);
+
+  /** Заведение Типа пишет через него; тут важно лишь, что persist и flush зовутся. */
+  private final EntityManager entityManager = mock(EntityManager.class);
 
   private final BookingService service =
       new BookingService(FIXED, bookings, types, windows, new BookingMapper(), null);
@@ -172,7 +176,7 @@ class RulesWithoutDbUnit {
   @DisplayName(
       "счётчик Броней приходит вместе с Типом: один запрос на весь список, а не два (D31)")
   void bookingCountComesWithTheTypesInOneQuery() {
-    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
 
     // Три строки группированного ответа, счётчик — в каждой. Типа без Броней
     // LEFT JOIN не отсекает: у него счётчик ноль.
@@ -198,7 +202,7 @@ class RulesWithoutDbUnit {
   @Test
   @DisplayName("один Тип и список берут счётчик одной и той же формой запроса (D31)")
   void singleAndListShareTheSameCountQuery() {
-    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
 
     var single = row("consult", "Консультация", 60, 2);
     when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(single));
@@ -213,7 +217,7 @@ class RulesWithoutDbUnit {
   @Test
   @DisplayName("нет Типа → 404 event_type_not_found, тем же отказом, что и у записи")
   void missingEventTypeRefuses() {
-    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
 
     when(types.findAllWithBookingCounts("ghost")).thenReturn(List.of());
 
@@ -226,7 +230,7 @@ class RulesWithoutDbUnit {
   @Test
   @DisplayName("переименование меняет только название и описание: id и durationMinutes целы (D29)")
   void renameTouchesNothingButText() {
-    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
 
     var stored = row("consult", "Консультация", 60, 0);
     when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(stored));
@@ -246,7 +250,7 @@ class RulesWithoutDbUnit {
   @Test
   @DisplayName("кратность 15 — ручное правило Типа (D42): 20 минут → fields[durationMinutes]")
   void durationStepIsManual() {
-    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
 
     CreateEventTypeRequest request = new CreateEventTypeRequest();
     request.setId("coaching");
@@ -261,6 +265,50 @@ class RulesWithoutDbUnit {
               assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
               assertThat(refusal.fields()).containsExactly("durationMinutes");
             });
+  }
+
+  @Test
+  @DisplayName("заведение Типа обходится одним чтением: повторной выборки после INSERT нет")
+  void createDoesNotReReadWhatItJustPersisted() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
+
+    when(types.findAllWithBookingCounts("coaching")).thenReturn(List.of());
+
+    CreateEventTypeRequest request = new CreateEventTypeRequest();
+    request.setId("coaching");
+    request.setName("Коучинг");
+    request.setDescription("описание");
+    request.setDurationMinutes(90);
+
+    var summary = typeService.create(request);
+
+    assertThat(summary.getId()).isEqualTo("coaching");
+    assertThat(summary.getBookingCount()).isZero();
+
+    // Ключевое наблюдение: чтение было ровно одно — предпроверка идемпотентности.
+    // Повторная выборка Типа, который мы только что вставили, читала бы из базы
+    // то же, что уже лежит в переменной, и стоила бы ещё одного обхода таблицы
+    // за один уже сделанный INSERT.
+    verify(types, times(1)).findAllWithBookingCounts("coaching");
+  }
+
+  @Test
+  @DisplayName("повтор заведения возвращает Тип со счётчиком из базы (D28)")
+  void createRepeatReturnsCountFromDatabase() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), entityManager);
+
+    // Брони на этот Тип могли завести между первой попыткой и повторной:
+    // счётчик повтора обязан прийти из базы, а не быть нулём по умолчанию.
+    var repeated = row("coaching", "Коучинг", 90, 5);
+    when(types.findAllWithBookingCounts("coaching")).thenReturn(List.of(repeated));
+
+    CreateEventTypeRequest request = new CreateEventTypeRequest();
+    request.setId("coaching");
+    request.setName("Коучинг");
+    request.setDescription("описание");
+    request.setDurationMinutes(90);
+
+    assertThat(typeService.create(request).getBookingCount()).isEqualTo(5);
   }
 
   /**

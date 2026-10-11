@@ -80,8 +80,10 @@ public class EventTypeService {
       throw new Refusal(Refusal.Kind.EVENT_TYPE_EXISTS);
     }
 
+    EventType created;
     try {
-      entityManager.persist(new EventType(request.getId(), name, description, duration));
+      created = new EventType(request.getId(), name, description, duration);
+      entityManager.persist(created);
       entityManager.flush();
     } catch (RuntimeException ex) {
       // Тип исключения — по наблюдению #83 — не один класс на все пути
@@ -93,7 +95,15 @@ public class EventTypeService {
       throw refusal;
     }
 
-    return toSummary(findWithCounts(request.getId()).orElseThrow());
+    // Повторно Тип из базы НЕ вычитывается: persist сделал его управляемым, а
+    // flush кладёт строку в таблицу до выхода из этого метода. Вторая выборка
+    // читала бы то же самое, что уже лежит в переменной created, — то есть
+    // платила бы ещё одним обходом таблицы за единственный уже сделанный INSERT.
+    //
+    // Счётчик у только что заведённого Типа — ноль по построению: Бронь ссылается
+    // на Тип внешним ключом, а Типа, на который можно сослаться, до этого
+    // запроса не существовало.
+    return eventTypeMapper.toSummary(created, 0L);
   }
 
   /**
