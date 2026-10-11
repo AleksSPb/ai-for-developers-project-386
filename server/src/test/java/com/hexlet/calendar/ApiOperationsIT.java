@@ -33,6 +33,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * То, что требует настоящего Postgres, и поэтому осталось на уровне 3: ограничение
@@ -72,6 +74,9 @@ class ApiOperationsIT {
   @Autowired private EntityManager entityManager;
 
   @Autowired private PlatformTransactionManager transactions;
+
+  /** Тем же Jackson, что и в HTTP: тело проверяется таким, каким уедет гостю. */
+  @Autowired private ObjectMapper objectMapper;
 
   /** Последний день сида: окна 09:00–18:00 Мск, слот берём 10:00–11:00. */
   private ZonedDateTime slotDay;
@@ -214,6 +219,117 @@ class ApiOperationsIT {
                     org.springframework.dao.DataIntegrityViolationException.class));
   }
 
+  // — чтение списков и правка Типа —
+
+  @Test
+  @DisplayName("счётчик Броней на живой базе: включает прошедшие и сходится со списком (D31)")
+  void bookingCountIncludesPastBookings() throws Exception {
+    // Три Брони одного Типа: две в прошлом и одна в будущем. Счётчик отвечает на
+    // вопрос «сколько заведено за всё время», поэтому прошедшие в нём обязаны
+    // быть — иначе он уехал бы в минус на второй день после записи.
+    Instant past = slotDay.minusDays(3).toInstant();
+    insertBookingDirectly(past.minusSeconds(3600), "прошедшая@example.com");
+    insertBookingDirectly(past, "ещё-прошедшая@example.com");
+
+    assertThat(post("/bookings", bookingBody("consult", slotDay, 60, "Иван", "ivan@example.com"))
+            .status())
+        .isEqualTo(201);
+
+    // Тип без единой Брони: счётчик ноль, а не «нет данных».
+    var second =
+        post(
+            "/event-types",
+            """
+            {"id": "coaching", "name": "Коучинг",
+             "description": "тип без Броней", "durationMinutes": 90}
+            """);
+    assertThat(second.status()).isEqualTo(201);
+
+    JsonNode list = get("/event-types").json(objectMapper).get("types");
+    assertThat(list).hasSize(2);
+    assertThat(countOf(list, "consult")).isEqualTo(3);
+    assertThat(countOf(list, "coaching")).isZero();
+
+    // Тот же Тип поимённо даёт то же число: два ответа считает одна и та же
+    // форма запроса, и разойтись они не могут.
+    assertThat(get("/event-types/consult").json(objectMapper).get("bookingCount").asInt())
+        .isEqualTo(3);
+    assertThat(get("/event-types/coaching").json(objectMapper).get("bookingCount").asInt()).isZero();
+  }
+
+  @Test
+  @DisplayName("PATCH на живой базе меняет тексты и оставляет id с длительностью (D29)")
+  void patchOnRealDatabaseKeepsIdentity() throws Exception {
+    var patched =
+        patch(
+            "/event-types/consult",
+            """
+            {"name": "Новое название", "description": "новое описание"}""");
+
+    assertThat(patched.status()).isEqualTo(200);
+    JsonNode body = patched.json(objectMapper);
+    assertThat(body.get("name").asText()).isEqualTo("Новое название");
+    assertThat(body.get("description").asText()).isEqualTo("новое описание");
+    assertThat(body.get("id").asText()).isEqualTo("consult");
+    assertThat(body.get("durationMinutes").asInt()).isEqualTo(60);
+
+    // То же в базе, а не только в ответе: ответ собран из той же сущности,
+    // поэтому проверка чтением ловит и «ответ врёт, а база права».
+    assertThat(jdbc.queryForObject("SELECT name FROM event_types WHERE id = 'consult'", String.class))
+        .isEqualTo("Новое название");
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT duration_minutes FROM event_types WHERE id = 'consult'", Integer.class))
+        .isEqualTo(60);
+  }
+
+  @Test
+  @DisplayName("PATCH на несуществующий Тип → 404 event_type_not_found")
+  void patchOfMissingTypeOnRealDatabaseRefuses() throws Exception {
+    var result =
+        patch(
+            "/event-types/ghost",
+            """
+            {"name": "Новое название", "description": "новое описание"}""");
+
+    assertThat(result.status()).isEqualTo(404);
+    assertThat(result.json(objectMapper).get("code").asText()).isEqualTo("event_type_not_found");
+  }
+
+  // — «запись переживает перезагрузку» (D48) —
+
+  @Test
+  @DisplayName("запись переживает перезагрузку: POST, новый запрос, запись есть в GET /bookings (D48)")
+  void bookingSurvivesReload() throws Exception {
+    var created =
+        post("/bookings", bookingBody("consult", slotDay, 60, "Иван", "ivan@example.com"));
+    assertThat(created.status()).isEqualTo(201);
+    String id = created.json(objectMapper).get("id").asText();
+
+    // Новый запрос — то самое, что делает перезагрузка страницы. Если бы запись
+    // жила в памяти процесса или в ответе первого POST, здесь её не было бы.
+    var listed = get("/bookings");
+    assertThat(listed.status()).isEqualTo(200);
+    assertThat(listed.json(objectMapper).toString()).contains(id);
+  }
+
+  @Test
+  @DisplayName("GET /bookings отдаёт всё по возрастанию start_dt, без параметров (D30)")
+  void bookingsComeBackOrderedByStart() throws Exception {
+    // Вставка задом наперёд: база обязана вернуть по возрастанию начала, а не
+    // в порядке вставки — порядок в памяти был бы подделкой проверки.
+    insertBookingDirectly(slotDay.plusMinutes(120).toInstant(), "поздняя@example.com");
+    insertBookingDirectly(slotDay.toInstant(), "ранняя@example.com");
+
+    var listed = get("/bookings");
+    assertThat(listed.status()).isEqualTo(200);
+
+    JsonNode bookings = listed.json(objectMapper);
+    assertThat(bookings).hasSize(2);
+    assertThat(bookings.get(0).get("guestEmail").asText()).isEqualTo("ранняя@example.com");
+    assertThat(bookings.get(1).get("guestEmail").asText()).isEqualTo("поздняя@example.com");
+  }
+
   // — величины таймаутов —
 
   @Test
@@ -259,13 +375,31 @@ class ApiOperationsIT {
   }
 
   private void insertBookingDirectly(ZonedDateTime start, String email) {
+    insertBookingDirectly(start.toInstant(), email);
+  }
+
+  /**
+   * Бронь мимо правил слоя — так заводится запись в прошлом, которую
+   * {@code POST /bookings} не отпустил бы по правилу «начало не в прошлом».
+   */
+  private void insertBookingDirectly(Instant start, String email) {
     jdbc.update(
         """
         INSERT INTO bookings VALUES (gen_random_uuid(), 'consult', ?, ?, 'Прямая вставка', ?, now())
         """,
-        Timestamp.from(start.toInstant()),
-        Timestamp.from(start.plusMinutes(60).toInstant()),
+        Timestamp.from(start),
+        Timestamp.from(start.plusSeconds(3600)),
         email);
+  }
+
+  /** Счётчик Броней конкретного Типа в списке типов. */
+  private int countOf(JsonNode list, String typeId) {
+    for (JsonNode type : list) {
+      if (type.get("id").asText().equals(typeId)) {
+        return type.get("bookingCount").asInt();
+      }
+    }
+    throw new AssertionError("Типа " + typeId + " в ответе нет: " + list);
   }
 
   private HttpResult postAfterBarrier(CyclicBarrier barrier, String path, String body)
@@ -291,6 +425,13 @@ class ApiOperationsIT {
             email);
   }
 
+  private HttpResult patch(String path, String body) throws Exception {
+    return send(
+        HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+            .header("Content-Type", "application/json")
+            .method("PATCH", HttpRequest.BodyPublishers.ofString(body)));
+  }
+
   private HttpResult post(String path, String body) throws Exception {
     return send(
         HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
@@ -298,10 +439,18 @@ class ApiOperationsIT {
             .POST(HttpRequest.BodyPublishers.ofString(body)));
   }
 
+  private HttpResult get(String path) throws Exception {
+    return send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET());
+  }
+
   private HttpResult send(HttpRequest.Builder builder) throws Exception {
     var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     return new HttpResult(response.statusCode(), response.body());
   }
 
-  private record HttpResult(int status, String body) {}
+  private record HttpResult(int status, String body) {
+    JsonNode json(ObjectMapper mapper) {
+      return mapper.readTree(body);
+    }
+  }
 }

@@ -3,8 +3,10 @@ package com.hexlet.calendar.web;
 import com.hexlet.calendar.api.model.CreateBookingRequest;
 import com.hexlet.calendar.service.BookingService;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,5 +39,16 @@ public class BookingController {
       @Valid @RequestBody CreateBookingRequest request) {
 
     return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.create(request));
+  }
+
+  /**
+   * Все Брони по возрастанию начала, без параметров (D30).
+   *
+   * <p>Правил здесь нет и быть не должно: чтение списка не отказывает, а
+   * порядок и пагинация — снаружи этого метода (см. сервис).
+   */
+  @GetMapping("/bookings")
+  public List<com.hexlet.calendar.api.model.Booking> list() {
+    return bookingService.list();
   }
 }
