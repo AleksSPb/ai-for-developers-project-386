@@ -75,6 +75,21 @@ Testcontainers.
 
 ## Подводные камни
 
+- **Стиль проверяет Checkstyle, и обе его настройки молчат при неверной
+  проводке.** Плагин 3.6.0 тянет Checkstyle 9.3, а в нём нет модуля
+  `SuppressWithNearbyTextFilter`, который есть в `google_checks.xml`: без
+  переопределения версии в `<dependencies>` плагина сборка падает на разборе
+  конфига, а не на нарушениях. И обратная сторона: `google_checks.xml` объявляет
+  `severity` дефолтом `warning`, а у плагина `violationSeverity` по умолчанию
+  `error` — вместе они дают линтер, зелёный при любом состоянии кода, который
+  при этом выглядит работающим. `severity=error` задан поэтому **в конфиге**,
+  рядом с остальными правилами, а не в плагине.
+- **`sourceDirectories` у Checkstyle задан явно, и это не формальность.** По
+  умолчанию плагин берёт `project.compileSourceRoots`, а туда openapi-generator
+  добавляет `target/generated-sources/openapi`: без явного списка в проверку
+  попадают сгенерированные модели — чужой стиль и ни одного Javadoc.
+- **Атрибут `file` у `SuppressionFilter` — литеральный путь.** Подстановки
+  `${project.basedir}` в нём не разворачиваются, и конфигурация не парсится.
 - **В Spring Boot 4 автоконфигурация Liquibase вынесена в отдельный модуль
   `spring-boot-liquibase`, и `starter-data-jpa` его не тянет.** Без этой
   зависимости `liquibase-core` лежит на classpath, но автоконфигурация в
