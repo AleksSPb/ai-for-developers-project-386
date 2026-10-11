@@ -1,11 +1,9 @@
 package com.hexlet.calendar.mapping;
 
+import com.hexlet.calendar.api.model.TimeRange;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-
 import org.springframework.stereotype.Component;
-
-import com.hexlet.calendar.api.model.TimeRange;
 
 /**
  * Бронь → модель контракта.
@@ -21,20 +19,20 @@ import com.hexlet.calendar.api.model.TimeRange;
 @Component
 public class BookingMapper {
 
-    public com.hexlet.calendar.api.model.Booking toModel(
-            com.hexlet.calendar.jpa.Booking booking) {
+  /** Модель контракта из сущности; полные имена — по описанию класса (D9). */
+  public com.hexlet.calendar.api.model.Booking toModel(com.hexlet.calendar.jpa.Booking booking) {
 
-        TimeRange range = new TimeRange();
-        range.setStart(OffsetDateTime.ofInstant(booking.getStartDt(), ZoneOffset.UTC));
-        range.setEnd(OffsetDateTime.ofInstant(booking.getEndDt(), ZoneOffset.UTC));
+    TimeRange range = new TimeRange();
+    range.setStart(OffsetDateTime.ofInstant(booking.getStartDt(), ZoneOffset.UTC));
+    range.setEnd(OffsetDateTime.ofInstant(booking.getEndDt(), ZoneOffset.UTC));
 
-        com.hexlet.calendar.api.model.Booking model = new com.hexlet.calendar.api.model.Booking();
-        model.setId(booking.getId().toString());
-        model.setEventTypeId(booking.getEventTypeId());
-        model.setTimeRange(range);
-        model.setGuestName(booking.getGuestName());
-        model.setGuestEmail(booking.getGuestEmail());
-        model.setCreatedAt(OffsetDateTime.ofInstant(booking.getCreatedAt(), ZoneOffset.UTC));
-        return model;
-    }
+    com.hexlet.calendar.api.model.Booking model = new com.hexlet.calendar.api.model.Booking();
+    model.setId(booking.getId().toString());
+    model.setEventTypeId(booking.getEventTypeId());
+    model.setTimeRange(range);
+    model.setGuestName(booking.getGuestName());
+    model.setGuestEmail(booking.getGuestEmail());
+    model.setCreatedAt(OffsetDateTime.ofInstant(booking.getCreatedAt(), ZoneOffset.UTC));
+    return model;
+  }
 }

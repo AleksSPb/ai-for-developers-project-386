@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+  Подавления разрешают конфликты правил Checkstyle с уже принятыми решениями,
+  а не прикрывают неудобный код.
+
+  `file` у `SuppressionFilter` в `checkstyle.xml` — литеральный путь: подстановки
+  `${project.basedir}` там не разворачиваются, и конфигурация не парсится.
+-->
+<suppressions>
+  <!--
+    Суффикс `*IT` кодирует уровень пирамиды тестов (#102), а правило требует не
+    более одной подряд идущей заглавной. `ApiOperationsIT` переименовать нельзя:
+    уровень задаётся именем файла, и `ApiOperationsTest` уже занят уровнем 2.
+  -->
+  <suppress files="[\\/]src[\\/]test[\\/]" checks="AbbreviationAsWordInName"/>
+
+  <!--
+    Правило считает строки до первого обращения и не видит комментарий между
+    объявлением и использованием. В тестах таких мест много, и перестановка
+    строк ради линтера сломала бы порядок, который читателю объясняет комментарий.
+  -->
+  <suppress files="[\\/]src[\\/]test[\\/]" checks="VariableDeclarationUsageDistance"/>
+
+  <!--
+    Перед `guestName` в `BookingService` стоит комментарий-обоснование шага D32
+    «форма — потом длительность». Переставить строки, чтобы сократить расстояние,
+    — значит испортить место, ради которого оно и написано.
+  -->
+  <suppress files="BookingService\.java" checks="VariableDeclarationUsageDistance"/>
+</suppressions>

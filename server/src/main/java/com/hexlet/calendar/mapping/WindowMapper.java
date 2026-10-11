@@ -1,12 +1,10 @@
 package com.hexlet.calendar.mapping;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-
-import org.springframework.stereotype.Component;
-
 import com.hexlet.calendar.api.model.TimeRange;
 import com.hexlet.calendar.jpa.Window;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import org.springframework.stereotype.Component;
 
 /**
  * Окно приёма → пара моментов из контракта.
@@ -18,10 +16,11 @@ import com.hexlet.calendar.jpa.Window;
 @Component
 public class WindowMapper {
 
-    public TimeRange toModel(Window window) {
-        TimeRange range = new TimeRange();
-        range.setStart(OffsetDateTime.ofInstant(window.getStartDt(), ZoneOffset.UTC));
-        range.setEnd(OffsetDateTime.ofInstant(window.getEndDt(), ZoneOffset.UTC));
-        return range;
-    }
+  /** Пара моментов окна в UTC; зона чтения гарантирована настройкой Hibernate. */
+  public TimeRange toModel(Window window) {
+    TimeRange range = new TimeRange();
+    range.setStart(OffsetDateTime.ofInstant(window.getStartDt(), ZoneOffset.UTC));
+    range.setEnd(OffsetDateTime.ofInstant(window.getEndDt(), ZoneOffset.UTC));
+    return range;
+  }
 }

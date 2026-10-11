@@ -47,6 +47,16 @@
     -->
     <openapi.generator.version>7.26.0</openapi.generator.version>
     <contract.file>${project.basedir}/../vite-project/contract/openapi.yaml</contract.file>
+
+    <!--
+      Стиль кода (#104). Версия Checkstyle задана отдельно от версии плагина и
+      переопределяется через `<dependencies>` плагина: 3.6.0 тянет Checkstyle 9.3,
+      а в нём нет модуля `SuppressWithNearbyTextFilter`, который есть в
+      `google_checks.xml`. Без переопределения сборка падает на разборе конфига,
+      а не на нарушениях.
+    -->
+    <checkstyle.plugin.version>3.6.0</checkstyle.plugin.version>
+    <checkstyle.version>14.3.0</checkstyle.version>
   </properties>
 
   <dependencies>
@@ -281,6 +291,51 @@
             <goals>
               <goal>integration-test</goal>
               <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Стиль кода (#104). Линтер живёт в `mvn verify`, а не в отдельной команде:
+        в `AGENTS.md` перед завершением уже написано `mvn verify`, и вторая
+        проверка создала бы второе место правды (та же логика, что в D51: джобов
+        два, а не три). Фаза `validate` — до компиляции, чтобы стиль не
+        обнаруживался после потраченной сборки.
+
+        Конфигурация лежит файлом `checkstyle.xml`, а не берётся из classpath
+        как `google_checks.xml`: конфиг из classpath нельзя ревьюить диффом.
+
+        `sourceDirectories` задан явно: по умолчанию плагин берёт
+        `project.compileSourceRoots`, а туда openapi-generator добавляет
+        `target/generated-sources/openapi`. Без этого в проверку попали бы
+        сгенерированные модели — чужой стиль и ни одного Javadoc.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>${checkstyle.plugin.version}</version>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <configLocation>checkstyle.xml</configLocation>
+          <sourceDirectories>
+            <sourceDirectory>src/main/java</sourceDirectory>
+          </sourceDirectories>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <consoleOutput>true</consoleOutput>
+        </configuration>
+        <executions>
+          <execution>
+            <id>check-style</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
             </goals>
           </execution>
         </executions>
