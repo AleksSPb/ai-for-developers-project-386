@@ -56,6 +56,20 @@ public class EventType {
     return durationMinutes;
   }
 
+  /**
+   * Переименование Типа: меняются название и описание, больше ничего (D29).
+   *
+   * <p>Метод, а не два сеттера, по той же причине, по которой идентификатор
+   * назначает конструктор: полем, которое нельзя поменять после создания,
+   * нельзя дать и setter. {@code durationMinutes} здесь не упоминается вовсе,
+   * поэтому «случайно» сменить его правкой нельзя — только {@code save()} с
+   * чужим объектом, а слой правил так не делает.
+   */
+  public void rename(String name, String description) {
+    this.name = name;
+    this.description = description;
+  }
+
   /** Идемпотентность Типа — по полному набору полей (D28). */
   public boolean sameContent(String name, String description, int durationMinutes) {
     return this.name.equals(name)

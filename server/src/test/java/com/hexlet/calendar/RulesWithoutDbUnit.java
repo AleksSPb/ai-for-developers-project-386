@@ -2,16 +2,20 @@ package com.hexlet.calendar;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hexlet.calendar.api.model.CreateBookingRequest;
 import com.hexlet.calendar.api.model.CreateEventTypeRequest;
+import com.hexlet.calendar.api.model.EventTypeSummary;
 import com.hexlet.calendar.api.model.TimeRange;
+import com.hexlet.calendar.api.model.UpdateEventTypeRequest;
 import com.hexlet.calendar.jpa.Booking;
 import com.hexlet.calendar.jpa.EventType;
 import com.hexlet.calendar.jpa.Window;
@@ -165,6 +169,81 @@ class RulesWithoutDbUnit {
   }
 
   @Test
+  @DisplayName(
+      "счётчик Броней приходит вместе с Типом: один запрос на весь список, а не два (D31)")
+  void bookingCountComesWithTheTypesInOneQuery() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+
+    // Три строки группированного ответа, счётчик — в каждой. Типа без Броней
+    // LEFT JOIN не отсекает: у него счётчик ноль.
+    // Строки заведены ДО `when`: стабление мока внутри `thenReturn` Mockito
+    // не даёт закончить начатое.
+    var consult = row("consult", "Консультация", 60, 4);
+    var coaching = row("coaching", "Коучинг", 90, 1);
+    var review = row("review", "Разбор", 30, 0);
+    when(types.findAllWithBookingCounts(null)).thenReturn(List.of(consult, coaching, review));
+
+    var list = typeService.list();
+
+    assertThat(list.getTypes())
+        .extracting(EventTypeSummary::getId, EventTypeSummary::getBookingCount)
+        .containsExactly(tuple("consult", 4), tuple("coaching", 1), tuple("review", 0));
+
+    // Ключевое наблюдение: один запрос на три Типа, а не findAll плюс запрос за
+    // счётчиками (то, что было бы N+1 с точностью до наоборот).
+    verify(types, times(1)).findAllWithBookingCounts(null);
+    verify(types, never()).findAll();
+  }
+
+  @Test
+  @DisplayName("один Тип и список берут счётчик одной и той же формой запроса (D31)")
+  void singleAndListShareTheSameCountQuery() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+
+    var single = row("consult", "Консультация", 60, 2);
+    when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(single));
+
+    assertThat(typeService.get("consult").getBookingCount()).isEqualTo(2);
+
+    // Ровно тот же метод репозитория, что у списка: если бы чтение одного Типа
+    // считало своим запросом, числа разошлись бы при первой же гонке.
+    verify(types, times(1)).findAllWithBookingCounts("consult");
+  }
+
+  @Test
+  @DisplayName("нет Типа → 404 event_type_not_found, тем же отказом, что и у записи")
+  void missingEventTypeRefuses() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+
+    when(types.findAllWithBookingCounts("ghost")).thenReturn(List.of());
+
+    assertThatThrownBy(() -> typeService.get("ghost"))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> assertThat(refusal.kind()).isEqualTo(Refusal.Kind.EVENT_TYPE_NOT_FOUND));
+  }
+
+  @Test
+  @DisplayName("переименование меняет только название и описание: id и durationMinutes целы (D29)")
+  void renameTouchesNothingButText() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+
+    var stored = row("consult", "Консультация", 60, 0);
+    when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(stored));
+
+    UpdateEventTypeRequest request = new UpdateEventTypeRequest();
+    request.setName("  Новое название  ");
+    request.setDescription("новое описание");
+
+    var summary = typeService.update("consult", request);
+
+    assertThat(summary.getName()).isEqualTo("Новое название");
+    assertThat(summary.getDescription()).isEqualTo("новое описание");
+    assertThat(summary.getId()).isEqualTo("consult");
+    assertThat(summary.getDurationMinutes()).isEqualTo(60);
+  }
+
+  @Test
   @DisplayName("кратность 15 — ручное правило Типа (D42): 20 минут → fields[durationMinutes]")
   void durationStepIsManual() {
     EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
@@ -182,6 +261,21 @@ class RulesWithoutDbUnit {
               assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
               assertThat(refusal.fields()).containsExactly("durationMinutes");
             });
+  }
+
+  /**
+   * Строка группированного ответа: Тип события вместе со счётчиком его Броней.
+   *
+   * <p>Проекция — интерфейс, поэтому подделать её можно только моком; собственного
+   * типа ради теста здесь не заводим, иначе он стал бы вторым описанием формы
+   * ответа, которая правда живёт в SQL.
+   */
+  private static EventTypeRepository.TypeWithBookingCount row(
+      String id, String name, int duration, long total) {
+    var row = mock(EventTypeRepository.TypeWithBookingCount.class);
+    when(row.getType()).thenReturn(new EventType(id, name, "описание", duration));
+    when(row.getTotal()).thenReturn(total);
+    return row;
   }
 
   private static CreateBookingRequest bookingRequest(String typeId, Instant start, Instant end) {

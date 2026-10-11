@@ -36,4 +36,7 @@ public interface BookingRepository extends JpaRepository<Booking, java.util.UUID
       @Param("eventTypeId") String eventTypeId,
       @Param("start") Instant start,
       @Param("end") Instant end);
+
+  /** Все Брони по возрастанию начала: порядок ответа задаёт база (D30). */
+  List<Booking> findAllByOrderByStartDtAsc();
 }

@@ -4,7 +4,9 @@ package com.hexlet.calendar;
 // хотя аннотации сгенерированных моделей — по-прежнему com.fasterxml.jackson.annotation.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -110,6 +112,10 @@ class ApiOperationsTest {
 
     when(types.findById("consult"))
         .thenReturn(Optional.of(new EventType("consult", "Консультация", "тип для тестов", 60)));
+    // Тот же Тип, но уже со счётчиком: чтение и правка идут одним запросом (D31).
+    // Заведение по-прежнему смотрит Тип по идентификатору — для повтора (D28).
+    var consultRow = row("consult", "Консультация", 60, 0);
+    when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(consultRow));
     // Окно 09:00–18:00 того же дня: слот 10:00–11:00 лежит внутри него.
     when(windows.findByEndDtAfterOrderByStartDtAsc(any()))
         .thenReturn(
@@ -120,6 +126,9 @@ class ApiOperationsTest {
     when(bookings.findByEventTypeIdAndStartDtAndGuestEmail(any(), any(), any()))
         .thenReturn(Optional.empty());
     when(bookings.findOverlapping(any(), any(), any())).thenReturn(List.of());
+    when(bookings.findAllByOrderByStartDtAsc()).thenReturn(List.of());
+    // Список типов по умолчанию пуст: тесты чтения переопределяют заглушку сами.
+    when(types.findAllWithBookingCounts(null)).thenReturn(List.of());
   }
 
   // — операции —
@@ -275,7 +284,152 @@ class ApiOperationsTest {
     }
   }
 
+  // — чтение и правка Типа события —
+
+  @Test
+  @DisplayName("GET /event-types: список и счётчик из одного запроса (D31)")
+  void eventTypeListCarriesGroupedCounts() throws Exception {
+    var withFour = row("consult", "Консультация", 60, 4);
+    var withOne = row("coaching", "Коучинг", 90, 1);
+    // Типа без Броней LEFT JOIN не отсекает — счётчик у него ноль.
+    var withNone = row("review", "Разбор", 30, 0);
+    when(types.findAllWithBookingCounts(null)).thenReturn(List.of(withFour, withOne, withNone));
+
+    var result = get("/event-types");
+    assertThat(result.status()).isEqualTo(200);
+
+    JsonNode list = result.json(objectMapper).get("types");
+    assertThat(list).hasSize(3);
+    assertThat(list.get(0).get("id").asText()).isEqualTo("consult");
+    assertThat(list.get(0).get("bookingCount").asInt()).isEqualTo(4);
+    assertThat(list.get(1).get("bookingCount").asInt()).isEqualTo(1);
+    assertThat(list.get(2).get("bookingCount").asInt()).isZero();
+
+    // Три Типа — один запрос, а не findAll плюс отдельный запрос за счётчиками.
+    verify(types, times(1)).findAllWithBookingCounts(null);
+  }
+
+  @Test
+  @DisplayName("счётчик в списке и в одном Типе сходится: одно и то же число из одного ответа")
+  void countIsTheSameInListAndInOneType() throws Exception {
+    var inListRow = row("consult", "Консультация", 60, 7);
+    var inOneRow = row("consult", "Консультация", 60, 7);
+    when(types.findAllWithBookingCounts(null)).thenReturn(List.of(inListRow));
+    when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(inOneRow));
+
+    JsonNode inList = get("/event-types").json(objectMapper).get("types").get(0);
+    JsonNode inOne = get("/event-types/consult").json(objectMapper);
+
+    assertThat(inList.get("bookingCount").asInt()).isEqualTo(7);
+    assertThat(inOne.get("bookingCount").asInt()).isEqualTo(inList.get("bookingCount").asInt());
+  }
+
+  @Test
+  @DisplayName("GET /event-types/{id}: нет Типа → 404 event_type_not_found")
+  void oneEventTypeAndItsNotFound() throws Exception {
+    var found = get("/event-types/consult");
+    assertThat(found.status()).isEqualTo(200);
+    assertThat(found.json(objectMapper).get("id").asText()).isEqualTo("consult");
+
+    when(types.findAllWithBookingCounts("ghost")).thenReturn(List.of());
+    var missing = get("/event-types/ghost");
+
+    assertThat(missing.status()).isEqualTo(404);
+    assertThat(missing.json(objectMapper).get("code").asText()).isEqualTo("event_type_not_found");
+  }
+
+  @Test
+  @DisplayName("PATCH меняет название и описание, id и durationMinutes не трогает (D29)")
+  void patchRenamesWithoutTouchingIdentity() throws Exception {
+    var renamed = row("consult", "Консультация", 60, 0);
+    when(types.findAllWithBookingCounts("consult")).thenReturn(List.of(renamed));
+
+    var patched = patch("/event-types/consult", """
+        {"name": "Новое название", "description": "новое описание"}""");
+
+    assertThat(patched.status()).isEqualTo(200);
+    JsonNode body = patched.json(objectMapper);
+    assertThat(body.get("name").asText()).isEqualTo("Новое название");
+    assertThat(body.get("description").asText()).isEqualTo("новое описание");
+    // Идентификатор и длительность приходят из той же сущности: тело их не
+    // содержит и подделать не может (ADR-0005).
+    assertThat(body.get("id").asText()).isEqualTo("consult");
+    assertThat(body.get("durationMinutes").asInt()).isEqualTo(60);
+  }
+
+  @Test
+  @DisplayName("PATCH без обязательного поля → 422 из аннотаций модели (D29, D40)")
+  void patchWithoutDescriptionIsRejectedByAnnotations() throws Exception {
+    var result = patch("/event-types/consult", """
+        {"name": "Только название"}""");
+
+    assertThat(result.status()).isEqualTo(422);
+    assertThat(result.json(objectMapper).get("fields").toString()).contains("description");
+  }
+
+  @Test
+  @DisplayName("PATCH на несуществующий Тип → 404 event_type_not_found")
+  void patchOfMissingTypeRefuses() throws Exception {
+    when(types.findAllWithBookingCounts("ghost")).thenReturn(List.of());
+
+    var result = patch("/event-types/ghost", """
+        {"name": "Новое название", "description": "новое описание"}""");
+
+    assertThat(result.status()).isEqualTo(404);
+    assertThat(result.json(objectMapper).get("code").asText()).isEqualTo("event_type_not_found");
+  }
+
+  // — список Броней —
+
+  @Test
+  @DisplayName("GET /bookings: список целиком, порядок из запроса (D30)")
+  void bookingsAreListedAsStored() throws Exception {
+    when(bookings.findAllByOrderByStartDtAsc())
+        .thenReturn(
+            List.of(
+                new Booking(
+                    UUID.randomUUID(),
+                    "consult",
+                    slotDay.toInstant(),
+                    slotDay.plusMinutes(60).toInstant(),
+                    "Иван",
+                    "ivan@example.com",
+                    Instant.now()),
+                new Booking(
+                    UUID.randomUUID(),
+                    "consult",
+                    slotDay.plusMinutes(120).toInstant(),
+                    slotDay.plusMinutes(180).toInstant(),
+                    "Пётр",
+                    "petr@example.com",
+                    Instant.now())));
+
+    var result = get("/bookings");
+    assertThat(result.status()).isEqualTo(200);
+
+    JsonNode list = result.json(objectMapper);
+    assertThat(list).hasSize(2);
+    assertThat(list.get(0).get("guestName").asText()).isEqualTo("Иван");
+    assertThat(list.get(1).get("guestName").asText()).isEqualTo("Пётр");
+    // Порядок приходит из базы, а не сортируется в памяти сервиса.
+    verify(bookings, times(1)).findAllByOrderByStartDtAsc();
+  }
+
   // — helpers —
+
+  /**
+   * Строка группированного ответа: Тип события вместе со счётчиком его Броней.
+   *
+   * <p>Подмок заводится до {@code when}: стабление другого мока внутри
+   * {@code thenReturn} Mockito не завершает.
+   */
+  private EventTypeRepository.TypeWithBookingCount row(
+      String id, String name, int duration, long total) {
+    var row = mock(EventTypeRepository.TypeWithBookingCount.class);
+    when(row.getType()).thenReturn(new EventType(id, name, "тип для тестов", duration));
+    when(row.getTotal()).thenReturn(total);
+    return row;
+  }
 
   private String bookingBody(
       String typeId, ZonedDateTime start, long minutes, String name, String email)
@@ -297,6 +451,15 @@ class ApiOperationsTest {
         HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body)));
+  }
+
+  private HttpResult patch(String path, String body) throws Exception {
+    return send(
+        HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+            .header("Content-Type", "application/json")
+            .method(
+                "PATCH",
+                HttpRequest.BodyPublishers.ofString(body)));
   }
 
   private HttpResult get(String path) throws Exception {
