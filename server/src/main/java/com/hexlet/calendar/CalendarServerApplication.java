@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Сервер бронирования звонков.
  *
- * Пока здесь только точка входа: операции, схема и сид окон заводятся дальше, а
+ * <p>Пока здесь только точка входа: операции, схема и сид окон заводятся дальше, а
  * локальный запуск (compose, Liquibase) уже работает — база поднимается, схема
  * создаётся миграциями, `ddl-auto=validate` проверяет, что схема совпала.
  *
@@ -16,7 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class CalendarServerApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(CalendarServerApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(CalendarServerApplication.class, args);
+  }
 }

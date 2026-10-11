@@ -17,20 +17,20 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 final class SharedPostgres {
 
-    private static final PostgreSQLContainer<?> INSTANCE = new PostgreSQLContainer<>("postgres:18-alpine")
-            .withDatabaseName("calendar")
-            .withUsername("calendar")
-            .withPassword("calendar");
+  private static final PostgreSQLContainer<?> INSTANCE =
+      new PostgreSQLContainer<>("postgres:18-alpine")
+          .withDatabaseName("calendar")
+          .withUsername("calendar")
+          .withPassword("calendar");
 
-    static {
-        INSTANCE.start();
-    }
+  static {
+    INSTANCE.start();
+  }
 
-    private SharedPostgres() {
-    }
+  private SharedPostgres() {}
 
-    /** Тот же экземпляр для каждого класса: адрес подставляет {@code @ServiceConnection}. */
-    static PostgreSQLContainer<?> container() {
-        return INSTANCE;
-    }
+  /** Тот же экземпляр для каждого класса: адрес подставляет {@code @ServiceConnection}. */
+  static PostgreSQLContainer<?> container() {
+    return INSTANCE;
+  }
 }

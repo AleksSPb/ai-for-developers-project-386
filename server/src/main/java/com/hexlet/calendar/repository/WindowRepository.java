@@ -1,11 +1,9 @@
 package com.hexlet.calendar.repository;
 
+import com.hexlet.calendar.jpa.Window;
 import java.time.Instant;
 import java.util.List;
-
 import org.springframework.data.jpa.repository.JpaRepository;
-
-import com.hexlet.calendar.jpa.Window;
 
 /**
  * Окна приёма: только чтение.
@@ -18,5 +16,5 @@ import com.hexlet.calendar.jpa.Window;
  */
 public interface WindowRepository extends JpaRepository<Window, Long> {
 
-    List<Window> findByEndDtAfterOrderByStartDtAsc(Instant now);
+  List<Window> findByEndDtAfterOrderByStartDtAsc(Instant now);
 }

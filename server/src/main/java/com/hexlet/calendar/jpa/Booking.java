@@ -1,12 +1,11 @@
 package com.hexlet.calendar.jpa;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Сущность брони, таблица {@code bookings} (D15).
@@ -22,68 +21,73 @@ import jakarta.persistence.Table;
 @Table(name = "bookings")
 public class Booking {
 
-    @Id
-    @Column(columnDefinition = "uuid")
-    private UUID id;
+  @Id
+  @Column(columnDefinition = "uuid")
+  private UUID id;
 
-    @Column(name = "event_type_id", nullable = false, length = 40)
-    private String eventTypeId;
+  @Column(name = "event_type_id", nullable = false, length = 40)
+  private String eventTypeId;
 
-    @Column(name = "start_dt", nullable = false)
-    private Instant startDt;
+  @Column(name = "start_dt", nullable = false)
+  private Instant startDt;
 
-    @Column(name = "end_dt", nullable = false)
-    private Instant endDt;
+  @Column(name = "end_dt", nullable = false)
+  private Instant endDt;
 
-    @Column(name = "guest_name", nullable = false, length = 100)
-    private String guestName;
+  @Column(name = "guest_name", nullable = false, length = 100)
+  private String guestName;
 
-    @Column(name = "guest_email", nullable = false, length = 254)
-    private String guestEmail;
+  @Column(name = "guest_email", nullable = false, length = 254)
+  private String guestEmail;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
+  @Column(name = "created_at", nullable = false)
+  private Instant createdAt;
 
-    protected Booking() {
-    }
+  protected Booking() {}
 
-    public Booking(UUID id, String eventTypeId, Instant startDt, Instant endDt,
-                   String guestName, String guestEmail, Instant createdAt) {
+  public Booking(
+      UUID id,
+      String eventTypeId,
+      Instant startDt,
+      Instant endDt,
+      String guestName,
+      String guestEmail,
+      Instant createdAt) {
 
-        this.id = id;
-        this.eventTypeId = eventTypeId;
-        this.startDt = startDt;
-        this.endDt = endDt;
-        this.guestName = guestName;
-        this.guestEmail = guestEmail;
-        this.createdAt = createdAt;
-    }
+    this.id = id;
+    this.eventTypeId = eventTypeId;
+    this.startDt = startDt;
+    this.endDt = endDt;
+    this.guestName = guestName;
+    this.guestEmail = guestEmail;
+    this.createdAt = createdAt;
+  }
 
-    public UUID getId() {
-        return id;
-    }
+  public UUID getId() {
+    return id;
+  }
 
-    public String getEventTypeId() {
-        return eventTypeId;
-    }
+  public String getEventTypeId() {
+    return eventTypeId;
+  }
 
-    public Instant getStartDt() {
-        return startDt;
-    }
+  public Instant getStartDt() {
+    return startDt;
+  }
 
-    public Instant getEndDt() {
-        return endDt;
-    }
+  public Instant getEndDt() {
+    return endDt;
+  }
 
-    public String getGuestName() {
-        return guestName;
-    }
+  public String getGuestName() {
+    return guestName;
+  }
 
-    public String getGuestEmail() {
-        return guestEmail;
-    }
+  public String getGuestEmail() {
+    return guestEmail;
+  }
 
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
 }

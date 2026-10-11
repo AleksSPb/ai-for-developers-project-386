@@ -34,34 +34,33 @@ import com.hexlet.calendar.refusal.Refusal;
  */
 public final class Integrity {
 
-    private Integrity() {
-    }
+  private Integrity() {}
 
-    /** Refusal по имени ограничения из цепочки причин, либо null. */
-    public static Refusal refusalOf(Throwable e) {
-        String message = chainMessage(e);
-        if (message.contains("bookings_no_overlap")) {
-            return new Refusal(Refusal.Kind.SLOT_TAKEN);
-        }
-        if (message.contains("bookings_event_type_id_fkey")) {
-            return new Refusal(Refusal.Kind.EVENT_TYPE_NOT_FOUND);
-        }
-        if (message.contains("event_types_pkey")) {
-            return new Refusal(Refusal.Kind.EVENT_TYPE_EXISTS);
-        }
-        return null;
+  /** Refusal по имени ограничения из цепочки причин, либо null. */
+  public static Refusal refusalOf(Throwable e) {
+    String message = chainMessage(e);
+    if (message.contains("bookings_no_overlap")) {
+      return new Refusal(Refusal.Kind.SLOT_TAKEN);
     }
+    if (message.contains("bookings_event_type_id_fkey")) {
+      return new Refusal(Refusal.Kind.EVENT_TYPE_NOT_FOUND);
+    }
+    if (message.contains("event_types_pkey")) {
+      return new Refusal(Refusal.Kind.EVENT_TYPE_EXISTS);
+    }
+    return null;
+  }
 
-    private static String chainMessage(Throwable e) {
-        StringBuilder all = new StringBuilder();
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t.getMessage() != null) {
-                all.append(t.getMessage()).append('\n');
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        return all.toString();
+  private static String chainMessage(Throwable e) {
+    StringBuilder all = new StringBuilder();
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t.getMessage() != null) {
+        all.append(t.getMessage()).append('\n');
+      }
+      if (t.getCause() == t) {
+        break;
+      }
     }
+    return all.toString();
+  }
 }

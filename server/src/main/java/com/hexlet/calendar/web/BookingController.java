@@ -1,15 +1,13 @@
 package com.hexlet.calendar.web;
 
+import com.hexlet.calendar.api.model.CreateBookingRequest;
+import com.hexlet.calendar.service.BookingService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-
-import com.hexlet.calendar.api.model.CreateBookingRequest;
-import com.hexlet.calendar.service.BookingService;
-
-import jakarta.validation.Valid;
 
 /**
  * Контроллер записи.
@@ -22,16 +20,16 @@ import jakarta.validation.Valid;
 @RestController
 public class BookingController {
 
-    private final BookingService bookingService;
+  private final BookingService bookingService;
 
-    public BookingController(BookingService bookingService) {
-        this.bookingService = bookingService;
-    }
+  public BookingController(BookingService bookingService) {
+    this.bookingService = bookingService;
+  }
 
-    @PostMapping("/bookings")
-    public ResponseEntity<com.hexlet.calendar.api.model.Booking> create(
-            @Valid @RequestBody CreateBookingRequest request) {
+  @PostMapping("/bookings")
+  public ResponseEntity<com.hexlet.calendar.api.model.Booking> create(
+      @Valid @RequestBody CreateBookingRequest request) {
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.create(request));
-    }
+    return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.create(request));
+  }
 }

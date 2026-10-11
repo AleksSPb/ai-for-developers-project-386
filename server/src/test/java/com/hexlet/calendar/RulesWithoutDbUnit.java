@@ -9,17 +9,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
 import com.hexlet.calendar.api.model.CreateBookingRequest;
 import com.hexlet.calendar.api.model.CreateEventTypeRequest;
 import com.hexlet.calendar.api.model.TimeRange;
@@ -34,6 +23,15 @@ import com.hexlet.calendar.repository.EventTypeRepository;
 import com.hexlet.calendar.repository.WindowRepository;
 import com.hexlet.calendar.service.BookingService;
 import com.hexlet.calendar.service.EventTypeService;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 /**
  * Порядок проверок слоя правил — БЕЗ базы.
@@ -52,141 +50,156 @@ import com.hexlet.calendar.service.EventTypeService;
  */
 class RulesWithoutDbUnit {
 
-    private static final Instant NOW = Instant.parse("2026-10-09T09:00:00Z");
-    private static final Clock FIXED = Clock.fixed(NOW, ZoneOffset.UTC);
+  private static final Instant NOW = Instant.parse("2026-10-09T09:00:00Z");
+  private static final Clock FIXED = Clock.fixed(NOW, ZoneOffset.UTC);
 
-    private final WindowRepository windows = mock(WindowRepository.class);
-    private final EventTypeRepository types = mock(EventTypeRepository.class);
-    private final BookingRepository bookings = mock(BookingRepository.class);
+  private final WindowRepository windows = mock(WindowRepository.class);
+  private final EventTypeRepository types = mock(EventTypeRepository.class);
+  private final BookingRepository bookings = mock(BookingRepository.class);
 
-    private final BookingService service = new BookingService(
-            FIXED, bookings, types, windows, new BookingMapper(), null);
+  private final BookingService service =
+      new BookingService(FIXED, bookings, types, windows, new BookingMapper(), null);
 
-    @Test
-    @DisplayName("начало в прошлом — 422 time_not_bookable, и база не тронута")
-    void pastStartRefusesBeforeAnyRead() {
-        when(types.findById(anyString()))
-                .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
+  @Test
+  @DisplayName("начало в прошлом — 422 time_not_bookable, и база не тронута")
+  void pastStartRefusesBeforeAnyRead() {
+    when(types.findById(anyString()))
+        .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
 
-        CreateBookingRequest request = bookingRequest("consult",
-                NOW.minusSeconds(3600), NOW.minusSeconds(3600).plusSeconds(3600));
+    CreateBookingRequest request =
+        bookingRequest("consult", NOW.minusSeconds(3600), NOW.minusSeconds(3600).plusSeconds(3600));
 
-        assertThatThrownBy(() -> service.create(request))
-                .isInstanceOfSatisfying(Refusal.class,
-                        refusal -> assertThat(refusal.kind()).isEqualTo(Refusal.Kind.TIME_NOT_BOOKABLE));
+    assertThatThrownBy(() -> service.create(request))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> assertThat(refusal.kind()).isEqualTo(Refusal.Kind.TIME_NOT_BOOKABLE));
 
-        // Прошлое раньше длительности: до база за типом не шли (D32, #81).
-        verify(types, never()).findById(anyString());
-        verify(windows, never()).findByEndDtAfterOrderByStartDtAsc(any());
-    }
+    // Прошлое раньше длительности: до база за типом не шли (D32, #81).
+    verify(types, never()).findById(anyString());
+    verify(windows, never()).findByEndDtAfterOrderByStartDtAsc(any());
+  }
 
-    @Test
-    @DisplayName("длительность ≠ длительности Типа → 422 validation_failed[timeRange]")
-    void durationMustMatchType() {
-        when(types.findById("consult"))
-                .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
+  @Test
+  @DisplayName("длительность ≠ длительности Типа → 422 validation_failed[timeRange]")
+  void durationMustMatchType() {
+    when(types.findById("consult"))
+        .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
 
-        CreateBookingRequest request = bookingRequest("consult",
-                NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(1800));
+    CreateBookingRequest request =
+        bookingRequest("consult", NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(1800));
 
-        assertThatThrownBy(() -> service.create(request))
-                .isInstanceOfSatisfying(Refusal.class, refusal -> {
-                    assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
-                    assertThat(refusal.fields()).containsExactly("timeRange");
-                });
-    }
+    assertThatThrownBy(() -> service.create(request))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> {
+              assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
+              assertThat(refusal.fields()).containsExactly("timeRange");
+            });
+  }
 
-    @Test
-    @DisplayName("нет окна, содержащего интервал → 404 slot_not_found")
-    void intervalMustFitOneWindow() {
-        when(types.findById("consult"))
-                .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
-        when(windows.findByEndDtAfterOrderByStartDtAsc(NOW))
-                .thenReturn(List.of(new Window(
-                        NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(1800))));
+  @Test
+  @DisplayName("нет окна, содержащего интервал → 404 slot_not_found")
+  void intervalMustFitOneWindow() {
+    when(types.findById("consult"))
+        .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
+    when(windows.findByEndDtAfterOrderByStartDtAsc(NOW))
+        .thenReturn(
+            List.of(new Window(NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(1800))));
 
-        // Интервал 09:00+3600 … +7200 не влезает в окно [+3600, +5400): не 409, а 404 (D35).
-        CreateBookingRequest request = bookingRequest("consult",
-                NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(3600));
+    // Интервал 09:00+3600 … +7200 не влезает в окно [+3600, +5400): не 409, а 404 (D35).
+    CreateBookingRequest request =
+        bookingRequest("consult", NOW.plusSeconds(3600), NOW.plusSeconds(3600).plusSeconds(3600));
 
-        assertThatThrownBy(() -> service.create(request))
-                .isInstanceOfSatisfying(Refusal.class,
-                        refusal -> assertThat(refusal.kind()).isEqualTo(Refusal.Kind.SLOT_NOT_FOUND));
-    }
+    assertThatThrownBy(() -> service.create(request))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> assertThat(refusal.kind()).isEqualTo(Refusal.Kind.SLOT_NOT_FOUND));
+  }
 
-    @Test
-    @DisplayName("повтор по ключу (тип, начало, почта) — старая Бронь, имя не обновляется (D37)")
-    void repeatReturnsOldBooking() {
-        Booking old = new Booking(UUID.fromString("11111111-1111-1111-1111-111111111111"),
-                "consult", NOW.plusSeconds(3600), NOW.plusSeconds(7200),
-                "ИВАН", "ivan@example.com", NOW.minusSeconds(60));
+  @Test
+  @DisplayName("повтор по ключу (тип, начало, почта) — старая Бронь, имя не обновляется (D37)")
+  void repeatReturnsOldBooking() {
+    Booking old =
+        new Booking(
+            UUID.fromString("11111111-1111-1111-1111-111111111111"),
+            "consult",
+            NOW.plusSeconds(3600),
+            NOW.plusSeconds(7200),
+            "ИВАН",
+            "ivan@example.com",
+            NOW.minusSeconds(60));
 
-        when(types.findById("consult"))
-                .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
-        when(windows.findByEndDtAfterOrderByStartDtAsc(NOW))
-                .thenReturn(List.of(new Window(NOW, NOW.plusSeconds(36000))));
-        when(bookings.findByEventTypeIdAndStartDtAndGuestEmail("consult",
-                NOW.plusSeconds(3600), "ivan@example.com")).thenReturn(Optional.of(old));
+    when(types.findById("consult"))
+        .thenReturn(Optional.of(new EventType("consult", "Консультация", "описание", 60)));
+    when(windows.findByEndDtAfterOrderByStartDtAsc(NOW))
+        .thenReturn(List.of(new Window(NOW, NOW.plusSeconds(36000))));
+    when(bookings.findByEventTypeIdAndStartDtAndGuestEmail(
+            "consult", NOW.plusSeconds(3600), "ivan@example.com"))
+        .thenReturn(Optional.of(old));
 
-        // Тот же ключ, но другое имя: ответ — старая Броня со СТАРЫМ именем.
-        CreateBookingRequest request = bookingRequest("consult",
-                NOW.plusSeconds(3600), NOW.plusSeconds(7200), "Пётр");
+    // Тот же ключ, но другое имя: ответ — старая Броня со СТАРЫМ именем.
+    CreateBookingRequest request =
+        bookingRequest("consult", NOW.plusSeconds(3600), NOW.plusSeconds(7200), "Пётр");
 
-        var model = service.create(request);
+    var model = service.create(request);
 
-        assertThat(model.getId()).isEqualTo("11111111-1111-1111-1111-111111111111");
-        assertThat(model.getGuestName()).isEqualTo("ИВАН");
-        assertThat(model.getCreatedAt().toInstant()).isEqualTo(NOW.minusSeconds(60));
-    }
+    assertThat(model.getId()).isEqualTo("11111111-1111-1111-1111-111111111111");
+    assertThat(model.getGuestName()).isEqualTo("ИВАН");
+    assertThat(model.getCreatedAt().toInstant()).isEqualTo(NOW.minusSeconds(60));
+  }
 
-    @Test
-    @DisplayName("почта проверяется руками → 422 validation_failed[guestEmail] (D41)")
-    void emailFormatIsManualRule() {
-        CreateBookingRequest request = bookingRequest("consult",
-                NOW.plusSeconds(3600), NOW.plusSeconds(7200));
-        request.setGuestEmail("nope");
+  @Test
+  @DisplayName("почта проверяется руками → 422 validation_failed[guestEmail] (D41)")
+  void emailFormatIsManualRule() {
+    CreateBookingRequest request =
+        bookingRequest("consult", NOW.plusSeconds(3600), NOW.plusSeconds(7200));
+    request.setGuestEmail("nope");
 
-        assertThatThrownBy(() -> service.create(request))
-                .isInstanceOfSatisfying(Refusal.class, refusal -> {
-                    assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
-                    assertThat(refusal.fields()).containsExactly("guestEmail");
-                });
-    }
+    assertThatThrownBy(() -> service.create(request))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> {
+              assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
+              assertThat(refusal.fields()).containsExactly("guestEmail");
+            });
+  }
 
-    @Test
-    @DisplayName("кратность 15 — ручное правило Типа (D42): 20 минут → fields[durationMinutes]")
-    void durationStepIsManual() {
-        EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
+  @Test
+  @DisplayName("кратность 15 — ручное правило Типа (D42): 20 минут → fields[durationMinutes]")
+  void durationStepIsManual() {
+    EventTypeService typeService = new EventTypeService(types, new EventTypeMapper(), null);
 
-        CreateEventTypeRequest request = new CreateEventTypeRequest();
-        request.setId("coaching");
-        request.setName("Коучинг");
-        request.setDescription("описание");
-        request.setDurationMinutes(20);
+    CreateEventTypeRequest request = new CreateEventTypeRequest();
+    request.setId("coaching");
+    request.setName("Коучинг");
+    request.setDescription("описание");
+    request.setDurationMinutes(20);
 
-        assertThatThrownBy(() -> typeService.create(request))
-                .isInstanceOfSatisfying(Refusal.class, refusal -> {
-                    assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
-                    assertThat(refusal.fields()).containsExactly("durationMinutes");
-                });
-    }
+    assertThatThrownBy(() -> typeService.create(request))
+        .isInstanceOfSatisfying(
+            Refusal.class,
+            refusal -> {
+              assertThat(refusal.kind()).isEqualTo(Refusal.Kind.VALIDATION_FAILED);
+              assertThat(refusal.fields()).containsExactly("durationMinutes");
+            });
+  }
 
-    private static CreateBookingRequest bookingRequest(String typeId, Instant start, Instant end) {
-        return bookingRequest(typeId, start, end, "Иван");
-    }
+  private static CreateBookingRequest bookingRequest(String typeId, Instant start, Instant end) {
+    return bookingRequest(typeId, start, end, "Иван");
+  }
 
-    private static CreateBookingRequest bookingRequest(String typeId, Instant start, Instant end,
-                                                       String guestName) {
+  private static CreateBookingRequest bookingRequest(
+      String typeId, Instant start, Instant end, String guestName) {
 
-        TimeRange range = new TimeRange();
-        range.setStart(OffsetDateTime.ofInstant(start, ZoneOffset.UTC));
-        range.setEnd(OffsetDateTime.ofInstant(end, ZoneOffset.UTC));
+    TimeRange range = new TimeRange();
+    range.setStart(OffsetDateTime.ofInstant(start, ZoneOffset.UTC));
+    range.setEnd(OffsetDateTime.ofInstant(end, ZoneOffset.UTC));
 
-        CreateBookingRequest request = new CreateBookingRequest();
-        request.setEventTypeId(typeId);
-        request.setTimeRange(range);
-        request.setGuestName(guestName);
-        request.setGuestEmail("ivan@example.com");
-        return request;
-    }
+    CreateBookingRequest request = new CreateBookingRequest();
+    request.setEventTypeId(typeId);
+    request.setTimeRange(range);
+    request.setGuestName(guestName);
+    request.setGuestEmail("ivan@example.com");
+    return request;
+  }
 }

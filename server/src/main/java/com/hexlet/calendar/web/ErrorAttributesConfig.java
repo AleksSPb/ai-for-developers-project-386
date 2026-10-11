@@ -1,7 +1,6 @@
 package com.hexlet.calendar.web;
 
 import java.util.Map;
-
 import org.springframework.boot.web.error.ErrorAttributeOptions;
 import org.springframework.boot.webmvc.error.DefaultErrorAttributes;
 import org.springframework.stereotype.Component;
@@ -25,12 +24,12 @@ import org.springframework.web.context.request.WebRequest;
 @Component
 public class ErrorAttributesConfig extends DefaultErrorAttributes {
 
-    @Override
-    public Map<String, Object> getErrorAttributes(WebRequest webRequest,
-                                                  ErrorAttributeOptions options) {
+  @Override
+  public Map<String, Object> getErrorAttributes(
+      WebRequest webRequest, ErrorAttributeOptions options) {
 
-        return Map.of(
-                "code", "internal_error",
-                "message", "Сервер не смог выполнить запрос.");
-    }
+    return Map.of(
+        "code", "internal_error",
+        "message", "Сервер не смог выполнить запрос.");
+  }
 }
