@@ -16,5 +16,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
  */
 public interface WindowRepository extends JpaRepository<Window, Long> {
 
+  /**
+   * Окна, конец которых позже {@code now}, по возрастанию начала.
+   *
+   * <p>Момент приходит параметром, а не часами базы — см. описание интерфейса (D21).
+   */
   List<Window> findByEndDtAfterOrderByStartDtAsc(Instant now);
 }

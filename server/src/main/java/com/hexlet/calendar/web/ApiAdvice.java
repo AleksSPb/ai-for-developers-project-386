@@ -38,6 +38,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiAdvice {
 
+  /**
+   * Отказ слоя правил → тело контракта и статус, который несёт {@code Kind}.
+   *
+   * <p>Тело собирается здесь, а не в сервисе: сервис не знает ни про один класс
+   * ответа. Подавляющих исключений нет — {@code Refusal} доходит сюда всегда.
+   */
   @ExceptionHandler(Refusal.class)
   public ResponseEntity<Object> refusal(Refusal refusal) {
     Object body =

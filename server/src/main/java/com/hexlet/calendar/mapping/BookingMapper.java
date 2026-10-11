@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class BookingMapper {
 
+  /** Модель контракта из сущности; полные имена — по описанию класса (D9). */
   public com.hexlet.calendar.api.model.Booking toModel(com.hexlet.calendar.jpa.Booking booking) {
 
     TimeRange range = new TimeRange();

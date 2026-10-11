@@ -29,8 +29,10 @@ public class Window {
   @Column(name = "end_dt", nullable = false)
   private Instant endDt;
 
+  /** Конструктор Hibernate: объект создаётся базой, а не приложением. */
   protected Window() {}
 
+  /** Окно приёма от {@code startDt} до {@code endDt}; идентификатор назначает база. */
   public Window(Instant startDt, Instant endDt) {
     this.startDt = startDt;
     this.endDt = endDt;

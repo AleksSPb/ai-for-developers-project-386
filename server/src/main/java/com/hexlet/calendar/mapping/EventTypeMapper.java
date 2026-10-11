@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class EventTypeMapper {
 
+  /** Собирает сводку Типа; счётчик Броней приходит снаружи — см. описание класса. */
   public EventTypeSummary toSummary(EventType type, int bookingCount) {
     EventTypeSummary summary = new EventTypeSummary();
     summary.setId(type.getId());

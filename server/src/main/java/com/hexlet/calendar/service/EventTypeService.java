@@ -29,6 +29,7 @@ public class EventTypeService {
   private final EventTypeMapper eventTypeMapper;
   private final EntityManager entityManager;
 
+  /** Репозиторий, маппер и менеджер сущностей: всё, что нужно D28 и D42. */
   public EventTypeService(
       EventTypeRepository eventTypeRepository,
       EventTypeMapper eventTypeMapper,
@@ -39,6 +40,12 @@ public class EventTypeService {
     this.entityManager = entityManager;
   }
 
+  /**
+   * Заводит Тип события; кратность 15 и идемпотентность — по описанию класса (D28, D42).
+   *
+   * <p>Повтор с тем же набором полей возвращает существующий Тип, любое
+   * расхождение — отказ {@code event_type_exists}.
+   */
   @Transactional
   public EventTypeSummary create(CreateEventTypeRequest request) {
 

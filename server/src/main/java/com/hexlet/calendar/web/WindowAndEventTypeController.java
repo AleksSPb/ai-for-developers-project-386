@@ -23,17 +23,24 @@ public class WindowAndEventTypeController {
   private final WindowService windowService;
   private final EventTypeService eventTypeService;
 
+  /** Сервисы окон и Типов; правил и сущностей контроллер не знает. */
   public WindowAndEventTypeController(
       WindowService windowService, EventTypeService eventTypeService) {
     this.windowService = windowService;
     this.eventTypeService = eventTypeService;
   }
 
+  /** Список окон приёма; живой фильтр и округление живут в сервисе (D24/D25). */
   @GetMapping("/windows")
   public AvailabilityWindowList windows() {
     return windowService.list();
   }
 
+  /**
+   * Завод Типа события; повтор с тем же набором полей вернёт старый Тип (D28).
+   *
+   * <p>Пять шагов проверки здесь нет и быть не должно — см. описание класса.
+   */
   @PostMapping("/event-types")
   public ResponseEntity<EventTypeSummary> createEventType(
       @Valid @RequestBody CreateEventTypeRequest request) {

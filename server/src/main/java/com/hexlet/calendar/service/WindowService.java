@@ -34,12 +34,18 @@ public class WindowService {
   private final WindowRepository windowRepository;
   private final WindowMapper windowMapper;
 
+  /** Репозиторий окон, маппер и часы: «сейчас» для фильтра приходит извне (D21). */
   public WindowService(Clock clock, WindowRepository windowRepository, WindowMapper windowMapper) {
     this.clock = clock;
     this.windowRepository = windowRepository;
     this.windowMapper = windowMapper;
   }
 
+  /**
+   * Окна приёма для календаря; фильтр и округление — по описанию класса (D24/D25).
+   *
+   * <p>Пустой результат — обычный {@code 200} со списком без окон, а не отказ (D26).
+   */
   @Transactional(readOnly = true)
   public AvailabilityWindowList list() {
     Instant now = clock.instant();

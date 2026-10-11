@@ -16,6 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class CalendarServerApplication {
 
+  /** Точка входа; схему и миграции поднимает Liquibase, а не этот метод. */
   public static void main(String[] args) {
     SpringApplication.run(CalendarServerApplication.class, args);
   }

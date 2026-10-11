@@ -43,8 +43,15 @@ public class Booking {
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
+  /** Конструктор Hibernate: объект создаётся базой, а не приложением. */
   protected Booking() {}
 
+  /**
+   * Бронь целиком; идентификатор и {@code createdAt} назначает приложение.
+   *
+   * <p>Именно поэтому запись идёт через {@code EntityManager.persist}, а не через
+   * {@code save()} — см. описание класса.
+   */
   public Booking(
       UUID id,
       String eventTypeId,

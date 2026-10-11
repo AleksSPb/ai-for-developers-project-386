@@ -47,6 +47,7 @@ public class BookingService {
   private final BookingMapper bookingMapper;
   private final EntityManager entityManager;
 
+  /** Репозитории и маппер — всё, что нужно пяти шагам D32; часы приходят извне (D21). */
   public BookingService(
       Clock clock,
       BookingRepository bookingRepository,
@@ -63,6 +64,12 @@ public class BookingService {
     this.entityManager = entityManager;
   }
 
+  /**
+   * Записывает Бронь; порядок и содержание пяти шагов — в описании класса (D32).
+   *
+   * <p>Наружу отдаётся модель контракта, а не сущность; отказ приходит
+   * исключением {@link Refusal} без HTTP-кода.
+   */
   @Transactional
   public com.hexlet.calendar.api.model.Booking create(CreateBookingRequest request) {
 
@@ -98,10 +105,10 @@ public class BookingService {
     // Шаг 4 — окно: ОДНО, целиком содержащее интервал (D35). Длинный интервал
     // даёт 404, а не 409; «409 вне окна» в этой формулировке недостижим.
     // Момент для фильтра пришёл из Clock, запрос его не получает из базы (D21).
-    boolean insideAWindow =
+    boolean insideWindow =
         windowRepository.findByEndDtAfterOrderByStartDtAsc(now).stream()
             .anyMatch(w -> !w.getStartDt().isAfter(start) && w.getEndDt().isAfter(end));
-    if (!insideAWindow) {
+    if (!insideWindow) {
       throw new Refusal(Refusal.Kind.SLOT_NOT_FOUND);
     }
 

@@ -22,10 +22,16 @@ public class BookingController {
 
   private final BookingService bookingService;
 
+  /** Слой правил записи; репозитория и сущностей контроллер не знает. */
   public BookingController(BookingService bookingService) {
     this.bookingService = bookingService;
   }
 
+  /**
+   * Запись Гостя на Слот; пять шагов проверки — в сервисе (D32).
+   *
+   * <p>Повтор по ключу идемпотентности вернёт ту же Бронь и тот же статус (D37).
+   */
   @PostMapping("/bookings")
   public ResponseEntity<com.hexlet.calendar.api.model.Booking> create(
       @Valid @RequestBody CreateBookingRequest request) {

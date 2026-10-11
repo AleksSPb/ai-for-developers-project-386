@@ -29,8 +29,10 @@ public class EventType {
   @Column(name = "duration_minutes", nullable = false)
   private int durationMinutes;
 
+  /** Конструктор Hibernate: объект создаётся базой, а не приложением. */
   protected EventType() {}
 
+  /** Тип события целиком; идентификатор — слаг, написанный Владельцем. */
   public EventType(String id, String name, String description, int durationMinutes) {
     this.id = id;
     this.name = name;

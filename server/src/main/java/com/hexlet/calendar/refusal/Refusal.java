@@ -37,10 +37,12 @@ public class Refusal extends RuntimeException {
       this.message = message;
     }
 
+    /** Статус ответа, который advice вернёт гостю. */
     public HttpStatus status() {
       return status;
     }
 
+    /** Текст для тела ответа; одна константа на код (D39). */
     public String message() {
       // Одна константа на код (D39) — текст не сочиняется на месте.
       return message;
@@ -50,16 +52,23 @@ public class Refusal extends RuntimeException {
   private final Kind kind;
   private final List<String> fields;
 
+  /** Отказ без указания полей формы: у него {@code fields[]} пуст. */
   public Refusal(Kind kind) {
     this(kind, List.of());
   }
 
+  /**
+   * Отказ с перечнем полей формы — тело {@code validation_failed}.
+   *
+   * <p>Список копируется: вызывающий не должен дописать в него после броска.
+   */
   public Refusal(Kind kind, List<String> fields) {
     super(kind.message());
     this.kind = kind;
     this.fields = List.copyOf(fields);
   }
 
+  /** Семантический код отказа, который advice переводит в статус и тело. */
   public Kind kind() {
     return kind;
   }

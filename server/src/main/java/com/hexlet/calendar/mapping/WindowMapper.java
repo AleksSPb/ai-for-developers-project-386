@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class WindowMapper {
 
+  /** Пара моментов окна в UTC; зона чтения гарантирована настройкой Hibernate. */
   public TimeRange toModel(Window window) {
     TimeRange range = new TimeRange();
     range.setStart(OffsetDateTime.ofInstant(window.getStartDt(), ZoneOffset.UTC));
