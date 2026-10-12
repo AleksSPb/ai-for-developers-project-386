@@ -65,3 +65,27 @@ logging:
     root: INFO
     com.hexlet.calendar: INFO
     org.hibernate.SQL: INFO
+
+# Наблюдаемость (D62). Эндпоинты actuator'а живут на порту 8080 рядом с
+# операциями контракта и в сам контракт не входят.
+management:
+  endpoints:
+    web:
+      exposure:
+        # Что видно наружу. Список закрытый, а не «всё, кроме опасного»: явное
+        # перечисление переживает добавление нового эндпоинта в Boot, иначе
+        # следующий релиз открыл бы наружу то, о чём здесь не думали.
+        include: health,info,metrics,env,loggers
+  endpoint:
+    # Что с этим эндпоинтом можно делать: access не про чтение, а про изменение.
+    # health, info и metrics менять нечем — они read-only по смыслу.
+    health:
+      show-details: ${HEALTH_SHOW_DETAILS:always}
+    # Имена свойств видны, значения — нет: в этом файле есть POSTGRES_PASSWORD,
+    # а на маскирование actuator'а как на защиту не полагаемся.
+    env:
+      show-values: never
+    # Уровни читаются, менять их на лету нельзя: уровень, заданный в этом файле
+    # или переменной окружения, иначе тихо разошёлся бы с тем, что стоит в репозитории.
+    loggers:
+      access: read-only

@@ -92,6 +92,25 @@
       <artifactId>spring-boot-liquibase</artifactId>
     </dependency>
 
+    <!--
+      Наблюдаемость (D62): стандартные HTTP-метрики actuator'а плюс счётчики
+      успешных операций домена из пакета `metrics`.
+
+      Версии нет — её задаёт BOM 4.1.1. Стартер в Boot 4 разделён на модули
+      (`spring-boot-starter-micrometer-metrics`, `spring-boot-health`,
+      `spring-boot-actuator-autoconfigure`) и тянет их транзитивно, а регистратор
+      по умолчанию — SimpleMeterRegistry: внешний сервис для сбора не нужен,
+      а значит и второе место, где что-то может молча перестать работать.
+
+      Эндпоинты actuator'а не входят в контракт main.tsp и живут на порту 8080
+      рядом с операциями; ограничение CORS (D61) на них не распространяется —
+      это сознательное решение, см. server/AGENTS.md.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
