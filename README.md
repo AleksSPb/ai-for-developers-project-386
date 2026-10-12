@@ -17,6 +17,8 @@
 
 https://ai-for-developers-project-386-1-d6fi.onrender.com/
 
+Для добавления типов событий - https://ai-for-developers-project-386-1-d6fi.onrender.com/#/event-types
+
 Страницу отдаёт сервер, поэтому в задеплоенном экземпляре `VITE_API_BASE_URL`
 задавать не нужно: клиент ходит в тот же адрес. Локальный запуск с живым сервером
 описан в разделе «Два режима».
