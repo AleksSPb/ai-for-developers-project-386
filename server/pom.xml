@@ -5,9 +5,7 @@
   Отдельный Maven-модуль без корневого агрегатора (D1): собирается сам из
   `server/`, в корне репозитория pom.xml нет и не появится.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <!--
@@ -28,7 +26,7 @@
 
   <groupId>com.hexlet.calendar</groupId>
   <artifactId>server</artifactId>
-  <version>0.0.1</version>
+  <version>0.0.2-SNAPSHOT</version>
   <name>calendar-server</name>
   <description>Сервер бронирования звонков</description>
 
