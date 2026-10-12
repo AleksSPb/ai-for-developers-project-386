@@ -48,6 +48,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-calendar}
       POSTGRES_USER: ${POSTGRES_USER:-calendar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendar}
+      # Откуда приходит клиент (D61). Без этого браузер отбросит ответы.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
       # Пусто — сид окон заводится. `!seed` — схема без окон.
       LIQUIBASE_CONTEXTS: ${LIQUIBASE_CONTEXTS:-}
     ports:

@@ -19,6 +19,7 @@ import com.hexlet.calendar.repository.WindowRepository;
 import jakarta.persistence.EntityManager;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
@@ -415,6 +416,54 @@ class ApiOperationsTest {
     verify(bookings, times(1)).findAllByOrderByStartDtAsc();
   }
 
+  // — клиент с другого origin (D61) —
+
+  @Test
+  @DisplayName("клиент с разрешённого адреса читает ответ")
+  void allowedOriginReadsResponse() throws Exception {
+    // Чтение не требует предварительного запроса, поэтому проверяется на
+    // настоящем GET: без заголовка разрешения браузер отбросил бы сам ответ, и
+    // приложение показало бы пустоту при полностью рабочем сервере.
+    var result =
+        send(
+            HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/event-types"))
+                .header("Origin", "http://localhost:5173")
+                .GET());
+
+    assertThat(result.status()).isEqualTo(200);
+    assertThat(result.headers().firstValue("Access-Control-Allow-Origin"))
+        .contains("http://localhost:5173");
+  }
+
+  @Test
+  @DisplayName("предварительный запрос проходит для записи и правки")
+  void preflightPassesForContractMethods() throws Exception {
+    // Ровно эти два метода уходят с телом `application/json`: без их разрешения
+    // запись и правка не прошли бы ещё до отправки, и гость увидел бы отказ
+    // при живом сервере.
+    for (var call : new String[][] {{"/bookings", "POST"}, {"/event-types/consult", "PATCH"}}) {
+      var result = preflight(call[0], "http://localhost:5173", call[1]);
+
+      assertThat(result.status()).withFailMessage(() -> call[1] + " " + call[0]).isEqualTo(200);
+      assertThat(result.headers().firstValue("Access-Control-Allow-Methods"))
+          .hasValueSatisfying(methods -> assertThat(methods).contains(call[1]));
+      assertThat(result.headers().firstValue("Access-Control-Allow-Headers"))
+          .hasValueSatisfying(headers -> assertThat(headers).containsIgnoringCase("Content-Type"));
+    }
+  }
+
+  @Test
+  @DisplayName("чужому адресу ответ без разрешения не достаётся")
+  void foreignOriginGetsNoPermission() throws Exception {
+    var result = preflight("/bookings", "http://localhost:9999", "POST");
+
+    // Не 200: браузер всё равно не отдаст ответ гостю. Проверяется именно отказ в
+    // разрешении, а не «какой код пришёл» — конкретный код здесь и есть деталь
+    // реализации Spring, за которую тест зацепиться не должен.
+    assertThat(result.status()).isNotEqualTo(200);
+    assertThat(result.headers().firstValue("Access-Control-Allow-Origin")).isEmpty();
+  }
+
   // — helpers —
 
   /**
@@ -468,10 +517,38 @@ class ApiOperationsTest {
 
   private HttpResult send(HttpRequest.Builder builder) throws Exception {
     var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-    return new HttpResult(response.statusCode(), response.body());
+    return new HttpResult(response.statusCode(), response.body(), response.headers());
   }
 
-  private record HttpResult(int status, String body) {
+  /**
+   * Предварительный запрос браузера: {@code OPTIONS} с {@code Origin} и методом,
+   * который браузер собирается вызвать.
+   *
+   * <p>Отдельно от {@code send()} по двум причинам. Первая: заголовки {@code
+   * Access-Control-Request-*} отправляет только браузер, и обычный запрос без них
+   * проверял бы не то. Вторая: у ответа интересует не тело, а заголовки
+   * разрешения, и читать их из общего результата значило бы тащить в каждый тест
+   * то, что нужно двум.
+   */
+  private HttpResult preflight(String path, String origin, String method) throws Exception {
+    var response =
+        http.send(
+            HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Origin", origin)
+                .header("Access-Control-Request-Method", method)
+                // Заголовок запрашивают только те вызовы, у которых тело с
+                // Content-Type, — ровно POST и PATCH. Без него в ответе не будет
+                // и Access-Control-Allow-Headers, и проверка разрешения заголовков
+                // проверяла бы не то, что делает браузер.
+                .header("Access-Control-Request-Headers", "content-type")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build(),
+            HttpResponse.BodyHandlers.ofString());
+
+    return new HttpResult(response.statusCode(), response.body(), response.headers());
+  }
+
+  private record HttpResult(int status, String body, HttpHeaders headers) {
     JsonNode json(ObjectMapper mapper) {
       return mapper.readTree(body);
     }
