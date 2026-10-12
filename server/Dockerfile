@@ -22,6 +22,13 @@ RUN mvn -B -q dependency:go-offline
 
 COPY server/src ./src
 COPY vite-project/contract ../vite-project/contract
+
+# Линтер живёт в `validate`, а `validate` раньше `package`, поэтому конфиги
+# нужны уже на этой сборке. Без них `checkstyle:check` падает с «Could not find
+# resource 'checkstyle.xml'» — локально это не воспроизвести, там файлы лежат
+# рядом с `pom.xml`, а в образ копируются только `pom.xml` и `src/`.
+COPY server/checkstyle.xml server/checkstyle-suppressions.xml ./
+
 RUN mvn -B -q clean package -DskipTests
 
 # --- Запуск ---
