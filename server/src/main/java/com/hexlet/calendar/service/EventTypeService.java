@@ -6,6 +6,7 @@ import com.hexlet.calendar.api.model.EventTypeSummary;
 import com.hexlet.calendar.api.model.UpdateEventTypeRequest;
 import com.hexlet.calendar.jpa.EventType;
 import com.hexlet.calendar.mapping.EventTypeMapper;
+import com.hexlet.calendar.metrics.DomainMetrics;
 import com.hexlet.calendar.refusal.Refusal;
 import com.hexlet.calendar.repository.EventTypeRepository;
 import jakarta.persistence.EntityManager;
@@ -31,9 +32,11 @@ public class EventTypeService {
   private final EventTypeRepository eventTypeRepository;
   private final EventTypeMapper eventTypeMapper;
   private final EntityManager entityManager;
+  private final DomainMetrics metrics;
 
   /**
-   * Репозиторий, маппер и менеджер сущностей: всё, что нужно D28, D29, D31 и D42.
+   * Репозиторий, маппер, менеджер сущностей и счётчики (D62) — всё, что нужно
+   * D28, D29, D31 и D42.
    *
    * <p>Репозитория Броней здесь нет вовсе, и это не упущение: счётчик приходит
    * вместе с Типом из одного запроса (D31), а не отдельным — слать его за
@@ -42,11 +45,13 @@ public class EventTypeService {
   public EventTypeService(
       EventTypeRepository eventTypeRepository,
       EventTypeMapper eventTypeMapper,
-      EntityManager entityManager) {
+      EntityManager entityManager,
+      DomainMetrics metrics) {
 
     this.eventTypeRepository = eventTypeRepository;
     this.eventTypeMapper = eventTypeMapper;
     this.entityManager = entityManager;
+    this.metrics = metrics;
   }
 
   /**
@@ -100,9 +105,14 @@ public class EventTypeService {
     // читала бы то же самое, что уже лежит в переменной created, — то есть
     // платила бы ещё одним обходом таблицы за единственный уже сделанный INSERT.
     //
-    // Счётчик у только что заведённого Типа — ноль по построению: Бронь ссылается
-    // на Тип внешним ключом, а Типа, на который можно сослаться, до этого
-    // запроса не существовало.
+    // Счётчик успешных заведений (D62) — после persist и flush, где строка
+    // действительно легла в базу. Идемпотентный повтор (D28) вернулся выше и
+    // сюда не доходит: он ничего не создавал.
+    metrics.eventTypeCreated();
+
+    // Счётчик Броней у только что заведённого Типа — ноль по построению: Бронь
+    // ссылается на Тип внешним ключом, а Типа, на который можно сослаться, до
+    // этого запроса не существовало.
     return eventTypeMapper.toSummary(created, 0L);
   }
 
@@ -167,6 +177,12 @@ public class EventTypeService {
     // Нормализация та же, что при заведении (D43): хвостовой пробел в названии
     // не должен становиться частью названия, которое увидит Гость.
     row.getType().rename(request.getName().trim(), request.getDescription().trim());
+
+    // Счётчик переименований (D62) считает вызовы, а не различия в данных:
+    // вызов с теми же значениями полей — тоже успешный вызов, и его отсутствие
+    // в счётчике сделало бы число зависящим от того, как именно гость нажал
+    // «сохранить».
+    metrics.eventTypeUpdated();
 
     return toSummary(row);
   }

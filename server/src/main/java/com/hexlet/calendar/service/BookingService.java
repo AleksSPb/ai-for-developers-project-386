@@ -4,6 +4,7 @@ import com.hexlet.calendar.api.model.CreateBookingRequest;
 import com.hexlet.calendar.jpa.Booking;
 import com.hexlet.calendar.jpa.EventType;
 import com.hexlet.calendar.mapping.BookingMapper;
+import com.hexlet.calendar.metrics.DomainMetrics;
 import com.hexlet.calendar.refusal.Refusal;
 import com.hexlet.calendar.repository.BookingRepository;
 import com.hexlet.calendar.repository.EventTypeRepository;
@@ -46,15 +47,24 @@ public class BookingService {
   private final WindowRepository windowRepository;
   private final BookingMapper bookingMapper;
   private final EntityManager entityManager;
+  private final DomainMetrics metrics;
 
-  /** Репозитории и маппер — всё, что нужно пяти шагам D32; часы приходят извне (D21). */
+  /**
+   * Репозитории, маппер и счётчик — всё, что нужно пяти шагам D32; часы приходят
+   * извне (D21).
+   *
+   * <p>Счётчик — не часть правил: он ничего не проверяет и ни на что не влияет,
+   * а нужен затем, чтобы «записей столько-то» можно было увидеть, не заводя
+   * ради этого ещё одну таблицу или запрос (D62).
+   */
   public BookingService(
       Clock clock,
       BookingRepository bookingRepository,
       EventTypeRepository eventTypeRepository,
       WindowRepository windowRepository,
       BookingMapper bookingMapper,
-      EntityManager entityManager) {
+      EntityManager entityManager,
+      DomainMetrics metrics) {
 
     this.clock = clock;
     this.bookingRepository = bookingRepository;
@@ -62,6 +72,7 @@ public class BookingService {
     this.windowRepository = windowRepository;
     this.bookingMapper = bookingMapper;
     this.entityManager = entityManager;
+    this.metrics = metrics;
   }
 
   /**
@@ -149,6 +160,12 @@ public class BookingService {
       }
       throw refusal;
     }
+
+    // Счётчик успешных записей (D62) — здесь, а не в advice и не в контроллере:
+    // единственная точка, где строка действительно легла в базу. Ветка
+    // идемпотентного повтора (D37) выше вернула существующую Бронь и сюда не
+    // доходит, поэтому повтор созданием не считается.
+    metrics.bookingCreated();
 
     return bookingMapper.toModel(booking);
   }
